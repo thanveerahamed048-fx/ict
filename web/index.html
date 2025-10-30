@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Trading Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Trade Dashboard</div>
+    <div class="controls">
+      <div class="control">
+        <label>Date range</label>
+        <div class="date-row">
+          <input type="date" id="dateStart" />
+          <span class="date-sep">to</span>
+          <input type="date" id="dateEnd" />
+        </div>
+      </div>
+      <div class="control compact">
+        <label>Instrument</label>
+        <select id="instrumentSelect">
+          <option value="">All instruments</option>
+        </select>
+      </div>
+      <button id="refreshBtn" class="btn primary">Refresh</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="kpis">
+      <div class="card kpi"><div class="kpi-label">Signals</div><div class="kpi-value" id="kpiSignals">0</div></div>
+      <div class="card kpi"><div class="kpi-label">Open</div><div class="kpi-value" id="kpiOpen">0</div></div>
+      <div class="card kpi"><div class="kpi-label">Closed</div><div class="kpi-value" id="kpiClosed">0</div></div>
+      <div class="card kpi"><div class="kpi-label">Win Rate</div><div class="kpi-value" id="kpiWinRate">0%</div></div>
+      <div class="card kpi"><div class="kpi-label">Net Pips</div><div class="kpi-value profit" id="kpiNetPips">0</div></div>
+      <div class="card kpi"><div class="kpi-label">Avg Pips</div><div class="kpi-value" id="kpiAvgPips">0</div></div>
+    </section>
+
+    <section class="grid-2">
+      <div class="card"><div class="card-title">Equity Curve (Net Pips)</div><div id="equityChart" class="chart"></div></div>
+      <div class="card"><div class="card-title">Daily P/L</div><div id="dailyChart" class="chart"></div></div>
+    </section>
+
+    <section class="grid-2">
+      <div class="card"><div class="card-title">By Strategy</div><div id="strategyChart" class="chart"></div></div>
+      <div class="card">
+        <div class="card-title">Filters</div>
+        <div class="filters">
+          <div class="filter-group">
+            <label>Strategies</label>
+            <div class="chips">
+              <label><input type="checkbox" class="strategyChk" value="PO3" checked /> PO3</label>
+              <label><input type="checkbox" class="strategyChk" value="FVGC" checked /> FVGC</label>
+              <label><input type="checkbox" class="strategyChk" value="BREAKER" checked /> BREAKER</label>
+              <label><input type="checkbox" class="strategyChk" value="JUDAS" checked /> JUDAS</label>
+            </div>
+          </div>
+          <div class="filter-group">
+            <label>Status</label>
+            <select id="statusSelect">
+              <option value="">All</option>
+              <option value="open">Open</option>
+              <option value="closed">Closed</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>Direction</label>
+            <select id="directionSelect">
+              <option value="">All</option>
+              <option value="buy">Buy</option>
+              <option value="sell">Sell</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>Trades date (NY)</label>
+            <input type="date" id="tableDate" />
+          </div>
+          <div class="filter-actions">
+            <button id="applyFiltersBtn" class="btn">Apply</button>
+            <button id="resetFiltersBtn" class="btn ghost">Reset</button>
+            <button id="csvBtn" class="btn">Export CSV</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-title">Trades</div>
+      <div class="table-wrap">
+        <table class="table" id="tradesTable">
+          <thead>
+            <tr>
+              <th>Time (NY)</th>
+              <th>Instrument</th>
+              <th>Strategy</th>
+              <th>Dir</th>
+              <th>Entry</th>
+              <th>SL</th>
+              <th>TP</th>
+              <th>Status</th>
+              <th>Exit</th>
+              <th>Result (pips)</th>
+              <th>Duration</th>
+            </tr>
+          </thead>
+          <tbody id="tradesBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <div id="drawer" class="drawer hidden">
+    <div class="drawer-content">
+      <div class="drawer-header">
+        <div id="drawerTitle">Trade</div>
+        <button id="drawerClose" class="btn ghost">Close</button>
+      </div>
+      <div id="drawerBody" class="drawer-body"></div>
+    </div>
+  </div>
+
+  <footer class="footer">© Your Trading Bot</footer>
+
+  <script src="./app.js"></script>
+</body>
+</html>
