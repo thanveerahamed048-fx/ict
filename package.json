@@ -3,10 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"npm:dash\" \"npm:bot\"",
-    "bot": "node index.js",
-    "dash": "node src/dashboard/server.js",
-    "start": "node src/dashboard/server.js"
+      "start": "node app.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -16,8 +13,5 @@
     "mongodb": "^6.20.0",
     "nodemailer": "^7.0.10",
     "ws": "^8.18.0"
-  },
-  "devDependencies": {
-    "concurrently": "^9.2.1"
   }
 }

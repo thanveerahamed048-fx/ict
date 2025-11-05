@@ -8,10 +8,11 @@ import { BreakerReversal } from '../strategies/breakerReversal.js';
 import { JudasSwing } from '../strategies/judasSwing.js';
 import { PrevDayIFVG } from '../strategies/prevDayIFVG.js';
 import { postStrategyEntry } from '../notify/dashboardClient.js';
+import { NyRangeOB } from '../strategies/nyRangeOB.js';
 
 // CONFIG: fixed pip distances (keep equal => 1:1 RR)
 const TP_PIPS = 60;
-const SL_PIPS = 60;
+const SL_PIPS = 80;
 
 export class ModelBus {
   constructor({ instrument, aggregator, log, notifier, monitor }) {
@@ -26,7 +27,8 @@ export class ModelBus {
     this.fvgc = new FVGContinuation({ decimals: instrument.decimals, pipSize: instrument.pipSize });
     this.breaker = new BreakerReversal({ decimals: instrument.decimals, pipSize: instrument.pipSize });
     this.judas = new JudasSwing({ decimals: instrument.decimals, pipSize: instrument.pipSize });
-    this.pdifvg = new PrevDayIFVG({ decimals: instrument.decimals, pipSize: instrument.pipSize, touchPips: 3 }); // NEW
+    this.pdifvg = new PrevDayIFVG({ decimals: instrument.decimals, pipSize: instrument.pipSize, touchPips: 3 });
+    this.nyRangeOB = new NyRangeOB({ decimals: instrument.decimals, pipSize: instrument.pipSize });
 
     this.lastDayKey = null;
     this.lastPrice = null;
@@ -39,7 +41,10 @@ export class ModelBus {
 
     const dKey = nyDayKey(msToNY(candle.ts));
     if (this.lastDayKey !== dKey) {
-      this.po3.resetDay?.(); this.judas.resetDay?.(); this.pdifvg.resetDay?.(); // NEW
+      this.po3.resetDay?.();
+      this.judas.resetDay?.();
+      this.pdifvg.resetDay?.();
+      this.nyRangeOB.resetDay?.(); // NEW - reset 4H-range strategy on day roll
       this.lastDayKey = dKey;
       this._log(`New NY day. Prev H/L: ${fmtPx(sessions.prevDayHigh, this.instrument.decimals)} / ${fmtPx(sessions.prevDayLow, this.instrument.decimals)}`);
     }
@@ -55,7 +60,8 @@ export class ModelBus {
     this.fvgc.evaluate({ candles: M1, m5: M5, sessions });
     this.breaker.evaluate({ candles: M1, sessions });
     this.judas.evaluate({ candles: M1, sessions });
-    this.pdifvg.evaluate({ m5: M5, sessions }); // NEW (needs M5 + sessions)
+    this.pdifvg.evaluate({ m5: M5, sessions });
+    this.nyRangeOB.onM1Close(candle); // NEW - feed M1 closes to build 17–21h 4H and M3
   }
 
   onTick(price, tsMs) {
@@ -126,7 +132,7 @@ export class ModelBus {
       handleEntry('PO3', p.direction, p.entry, sl, tp, tsMs);
     }
 
-    // Notify PDIFVG about touches (prev-day open/close)
+    // PrevDay IFVG: register touch + check entry
     this.pdifvg.onTickTouch(price, sessions);
     const pd = this.pdifvg.onPrice(price);
     if (pd) {
@@ -134,7 +140,14 @@ export class ModelBus {
       handleEntry('PDIFVG', pd.direction, pd.entry, sl, tp, tsMs);
     }
 
-    // FVGC, BREAKER, JUDAS  { name: 'FVGC', ref: this.fvgc },
+    // NYRangeOB (17–21 NY 4H range + OB retest after 21:00 NY)
+    const nyob = this.nyRangeOB.onTick(price, tsMs);
+    if (nyob) {
+      const { sl, tp } = this._buildFixedStops(nyob.entry, nyob.direction);
+      handleEntry('NYRangeOB', nyob.direction, nyob.entry, sl, tp, tsMs);
+    }
+
+    // Others: BREAKER, JUDAS (you’ve chosen not to enter FVGC on tick here)
     for (const strat of [
       { name: 'BREAKER', ref: this.breaker },
       { name: 'JUDAS', ref: this.judas }
