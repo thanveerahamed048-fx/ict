@@ -27,16 +27,25 @@ const TRADES_COLL = process.env.TRADES_COLL || 'trades';
 
 const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY;
 
-const MAIL_ENABLED = process.env.MAIL_ENABLED === '1';
-const SMTP_HOST = process.env.SMTP_HOST || 'smtp.gmail.com';
-const SMTP_PORT = Number(process.env.SMTP_PORT || 465);
-const SMTP_SECURE = process.env.SMTP_SECURE ? process.env.SMTP_SECURE === '1' : (SMTP_PORT === 465);
-const SMTP_USER = process.env.SMTP_USER || '';
+// const MAIL_ENABLED = process.env.MAIL_ENABLED === '1';
+// const SMTP_HOST = process.env.SMTP_HOST || 'smtp.gmail.com';
+// const SMTP_PORT = Number(process.env.SMTP_PORT || 465);
+// const SMTP_SECURE = process.env.SMTP_SECURE ? process.env.SMTP_SECURE === '1' : (SMTP_PORT === 465);
+//const SMTP_USER = process.env.SMTP_USER || '';
 const SMTP_PASS = process.env.SMTP_PASS || '';
-const MAIL_FROM = process.env.MAIL_FROM || SMTP_USER || '';
-const MAIL_TO = ['thanveerahamed048@gmail.com'];
-const MAIL_THROTTLE_MS = Number(process.env.MAIL_THROTTLE_MS || 60000);
+//const MAIL_FROM = process.env.MAIL_FROM || SMTP_USER || '';
+//const MAIL_TO = ['thanveerahamed048@gmail.com'];
+// const MAIL_THROTTLE_MS = Number(process.env.MAIL_THROTTLE_MS || 60000);
 
+// Email settings (use an App Password if Gmail/Outlook)
+const MAIL_ENABLED = true; // set false to disable emails
+const SMTP_HOST = 'smtp.gmail.com';
+const SMTP_PORT = 465;         // 465 = SSL, 587 = STARTTLS
+const SMTP_SECURE = true;      // true for 465, false for 587
+const SMTP_USER = '123ninjaboy456@gmail.com';
+const MAIL_FROM = 'PO3 Signals <thanveerahamed048@gmail.com>';
+const MAIL_TO = ['thanveerahamed048@gmail.com']; // list of recipients
+const MAIL_THROTTLE_MS = 60_000;    // min interval per instrument+signal
 // Live feed tracker
 const live = {
   ws: { connected: false, lastOpenAt: 0, lastMsgAt: 0 },
