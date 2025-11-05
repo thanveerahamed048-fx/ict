@@ -37,6 +37,17 @@ const MAIL_FROM = process.env.MAIL_FROM || SMTP_USER || '';
 const MAIL_TO = (process.env.MAIL_TO || '').split(',').map(s => s.trim()).filter(Boolean);
 const MAIL_THROTTLE_MS = Number(process.env.MAIL_THROTTLE_MS || 60000);
 
+// Live feed tracker
+const live = {
+  ws: { connected: false, lastOpenAt: 0, lastMsgAt: 0 },
+  ticks: new Map() // instrumentId -> { price, tsMs }
+};
+
+function updateTick(instId, price, tsMs) {
+  live.ticks.set(instId, { price, tsMs });
+  live.ws.lastMsgAt = Date.now();
+}
+
 // ====== SERVER (Express + Mongo) ======
 const NY_ZONE = 'America/New_York';
 const fmtNY = (ms) => DateTime.fromMillis(ms, { zone: NY_ZONE }).toFormat('yyyy-LL-dd HH:mm:ss');
@@ -73,14 +84,39 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 app.use(express.static(path.join(__dirname, 'web')));
 
-// Health
+
 app.get('/health', async (_req, res) => {
   try {
     const open = await trades.countDocuments({ status: 'open' });
-    res.json({ ok: true, open });
+    const now = Date.now();
+    const lastMsgAgeSec = live.ws.lastMsgAt ? Math.round((now - live.ws.lastMsgAt) / 1000) : null;
+    res.json({
+      ok: true,
+      open,
+      ws: { connected: live.ws.connected, lastMsgAgeSec }
+    });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
+});
+
+app.get('/debug/ticks', (_req, res) => {
+  const now = Date.now();
+  const items = INSTRUMENTS.map(inst => {
+    const t = live.ticks.get(inst.id);
+    return t
+      ? {
+          instrumentId: inst.id,
+          price: Number(t.price.toFixed(inst.decimals)),
+          tsMs: t.tsMs,
+          ageSec: Math.round((now - t.tsMs) / 1000)
+        }
+      : { instrumentId: inst.id, price: null, tsMs: null, ageSec: null };
+  });
+  res.json({
+    ws: { connected: live.ws.connected, lastMsgAt: live.ws.lastMsgAt || null },
+    items
+  });
 });
 
 // Create/Upsert trade on strategy entry
@@ -373,26 +409,38 @@ async function startBot() {
   new FinnhubWS({
     apiKey: FINNHUB_API_KEY,
     symbols: INSTRUMENTS.map(i => i.feedSymbol),
+    onOpen: () => { live.ws.connected = true; live.ws.lastOpenAt = Date.now(); },
+    onClose: () => { live.ws.connected = false; },
     onTick: (feedSymbol, price, tsMs) => {
       const inst = INSTRUMENTS.find(i => i.feedSymbol === feedSymbol);
       if (!inst) return;
+      updateTick(inst.id, price, tsMs);                // <-- live tick
       aggById.get(inst.id)?.ingestTick(price, tsMs);
       busById.get(inst.id)?.onTick(price, tsMs);
       monitor.onTick(inst.id, price, tsMs);
     }
   });
 
-  setInterval(() => {
-    for (const inst of INSTRUMENTS) {
-      const agg = aggById.get(inst.id);
-      const sessions = agg.getSessions();
-      const lastM1 = agg.getM1().at(-1);
-      if (!lastM1) continue;
-      console.log(
-        `[bot] ${inst.id} px=${fmtPx(lastM1.close, inst.decimals)} DO=${fmtPx(sessions.dailyOpen, inst.decimals)} Asia=[${fmtPx(sessions.asiaLo, inst.decimals)}-${fmtPx(sessions.asiaHi, inst.decimals)}]`
-      );
-    }
-  }, 60_000);
+setInterval(() => {
+  const now = Date.now();
+  for (const inst of INSTRUMENTS) {
+    const agg = aggById.get(inst.id);
+    const sessions = agg.getSessions();
+    const lastM1 = agg.getM1().at(-1);
+    const t = live.ticks.get(inst.id);
+    const livePx = t ? t.price : null;
+    const ageSec = t ? Math.round((now - t.tsMs) / 1000) : null;
+
+    console.log(
+      `[bot] ${inst.id}`
+      + ` live=${livePx != null ? livePx.toFixed(inst.decimals) : 'n/a'}`
+      + ` age=${ageSec != null ? ageSec + 's' : 'n/a'}`
+      + ` m1Close=${lastM1 ? lastM1.close.toFixed(inst.decimals) : 'n/a'}`
+      + ` DO=${fmtPx(sessions.dailyOpen, inst.decimals)}`
+      + ` Asia=[${fmtPx(sessions.asiaLo, inst.decimals)}-${fmtPx(sessions.asiaHi, inst.decimals)}]`
+    );
+  }
+}, 60_000);
 }
 
 // Start server then bot
