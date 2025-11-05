@@ -273,7 +273,7 @@ app.get('/trades/:id', async (req, res) => {
 });
 
 
-app.listen(HTTP_PORT, () => {
-  console.log(`Dashboard API running on http://localhost:${HTTP_PORT}`);
-});
+//app.listen(HTTP_PORT, () => {
+ // console.log(`Dashboard API running on http://localhost:${HTTP_PORT}`);
+//});
 export default app;
