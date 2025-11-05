@@ -1,5 +1,5 @@
 // web/app.js
-const DASHBOARD_BASE = 'http://localhost:8888';
+const DASHBOARD_BASE = 'http://0.0.0.0:8888';
 
 const kpiSignals = document.getElementById('kpiSignals');
 const kpiOpen = document.getElementById('kpiOpen');
