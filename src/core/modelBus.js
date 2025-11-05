@@ -136,7 +136,6 @@ export class ModelBus {
 
     // FVGC, BREAKER, JUDAS  { name: 'FVGC', ref: this.fvgc },
     for (const strat of [
-      
       { name: 'BREAKER', ref: this.breaker },
       { name: 'JUDAS', ref: this.judas }
     ]) {
