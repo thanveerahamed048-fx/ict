@@ -5,10 +5,12 @@
   "scripts": {
     "dev": "concurrently \"npm:dash\" \"npm:bot\"",
     "bot": "node index.js",
-    "dash": "node src/dashboard/server.js"
+    "dash": "node src/dashboard/server.js",
+    "start": "node src/dashboard/server.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "luxon": "^3.4.4",
     "mongodb": "^6.20.0",

@@ -134,9 +134,9 @@ export class ModelBus {
       handleEntry('PDIFVG', pd.direction, pd.entry, sl, tp, tsMs);
     }
 
-    // FVGC, BREAKER, JUDAS
+    // FVGC, BREAKER, JUDAS  { name: 'FVGC', ref: this.fvgc },
     for (const strat of [
-      { name: 'FVGC', ref: this.fvgc },
+      
       { name: 'BREAKER', ref: this.breaker },
       { name: 'JUDAS', ref: this.judas }
     ]) {

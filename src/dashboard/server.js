@@ -3,14 +3,15 @@ import express from 'express';
 import { MongoClient } from 'mongodb';
 import { DateTime } from 'luxon';
 import cors from 'cors';
-
+import dotenv from "dotenv";
+dotenv.config();
 // ================== DIRECT CONFIG (edit me) ==================
-const HTTP_PORT = 8888;
-const MONGO_URI = 'mongodb+srv://soonapana062_db_user:koaPG0RYSs96NtUe@fxresults.wqddnx1.mongodb.net/?appName=fxresults';
+const HTTP_PORT = process.env.HTTP_PORT;
+const MONGO_URI = process.env.MONGO_URI; 
 const DB_NAME = 'trade_dashboard';
 const TRADES_COLL = 'trades';
 // ============================================================
-
+console.log("mongo",MONGO_URI);
 const NY_ZONE = 'America/New_York';
 const fmtNY = (ms) => DateTime.fromMillis(ms, { zone: NY_ZONE }).toFormat('yyyy-LL-dd HH:mm:ss');
 const dateNY = (ms) => DateTime.fromMillis(ms, { zone: NY_ZONE }).toFormat('yyyy-LL-dd');
@@ -271,6 +272,8 @@ app.get('/trades/:id', async (req, res) => {
   }
 });
 
+
 app.listen(HTTP_PORT, () => {
   console.log(`Dashboard API running on http://localhost:${HTTP_PORT}`);
 });
+export default app;

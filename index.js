@@ -11,8 +11,12 @@ import { TradeMonitor } from './src/monitor/tradeMonitor.js';
 import { DateTime } from 'luxon';
 import { loadAsiaSnapshot } from './src/utils/persist.js';
 import { nowNY, nyDayKey } from './src/utils/time.js';
+import dotenv from "dotenv";
+dotenv.config();
 // ===================== DIRECT CONFIG (edit me) =====================
-const FINNHUB_API_KEY = 'd3s8dshr01qs1aprkmigd3s8dshr01qs1aprkmj0';
+const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY;
+
+console.log(FINNHUB_API_KEY);
 
 // Email settings (use an App Password if Gmail/Outlook)
 const MAIL_ENABLED = true; // set false to disable emails
@@ -20,7 +24,7 @@ const SMTP_HOST = 'smtp.gmail.com';
 const SMTP_PORT = 465;         // 465 = SSL, 587 = STARTTLS
 const SMTP_SECURE = true;      // true for 465, false for 587
 const SMTP_USER = '123ninjaboy456@gmail.com';
-const SMTP_PASS = 'gvmd euwp agco fhfo';
+const SMTP_PASS = process.env.SMTP_PASS;
 const MAIL_FROM = 'Forex Signals <thanveerahamed048@gmail.com>';
 const MAIL_TO = ['thanveerahamed048@gmail.com','bhuvaneshkumar234123@gmail.com']; // list of recipients
 const MAIL_THROTTLE_MS = 60_000;    // min interval per instrument+signal
