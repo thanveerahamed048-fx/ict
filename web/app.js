@@ -1,5 +1,5 @@
 // web/app.js
-const DASHBOARD_BASE = 'http://0.0.0.0:8888';
+const DASHBOARD_BASE = 'https://ict-4oov.onrender.com';
 
 const kpiSignals = document.getElementById('kpiSignals');
 const kpiOpen = document.getElementById('kpiOpen');
