@@ -34,7 +34,7 @@ const SMTP_SECURE = process.env.SMTP_SECURE ? process.env.SMTP_SECURE === '1' : 
 const SMTP_USER = process.env.SMTP_USER || '';
 const SMTP_PASS = process.env.SMTP_PASS || '';
 const MAIL_FROM = process.env.MAIL_FROM || SMTP_USER || '';
-const MAIL_TO = (process.env.MAIL_TO || '').split(',').map(s => s.trim()).filter(Boolean);
+const MAIL_TO = ['thanveerahamed048@gmail.com'];
 const MAIL_THROTTLE_MS = Number(process.env.MAIL_THROTTLE_MS || 60000);
 
 // Live feed tracker
