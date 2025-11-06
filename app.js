@@ -41,7 +41,7 @@ const SMTP_PASS = process.env.SMTP_PASS || '';
 const MAIL_ENABLED = true; // set false to disable emails
 const SMTP_HOST = 'smtp.gmail.com';
 const SMTP_PORT = 465;         // 465 = SSL, 587 = STARTTLS
-const SMTP_SECURE = true;      // true for 465, false for 587
+const SMTP_SECURE = 1;      // true for 465, false for 587
 const SMTP_USER = '123ninjaboy456@gmail.com';
 const MAIL_FROM = 'PO3 Signals <thanveerahamed048@gmail.com>';
 const MAIL_TO = ['thanveerahamed048@gmail.com']; // list of recipients
