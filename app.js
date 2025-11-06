@@ -338,6 +338,28 @@ app.get('/trades', async (req, res) => {
   }
 });
 
+app.post('/debug/send-email', async (_req, res) => {
+  try {
+    await mailer.sendSignal({
+      type: 'strategy_entry',
+      strategy: 'TEST',
+      instrumentId: 'PING',
+      decimals: 2,
+      direction: 'buy',
+      entry: 123.45,
+      sl: 122.45,
+      tp: 124.45,
+      slPips: 100,
+      tpPips: 100,
+      sessions: {},
+      tsMs: Date.now()
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e?.message || String(e) });
+  }
+});
+
 // Trade detail
 app.get('/trades/:id', async (req, res) => {
   try {
@@ -362,6 +384,10 @@ const mailer = new Mailer({
   throttleMs: MAIL_THROTTLE_MS
 });
 
+mailer.verify().catch((e) => {
+  // keep running, but surface why SMTP fails
+  console.error('[mailer] verify error:', e?.message || e);
+});
 // ====== BOT (WS, strategies) ======
 const instrumentMap = new Map(INSTRUMENTS.map(i => [i.id, i]));
 const monitor = new TradeMonitor({ notifier: mailer, instrumentMap });

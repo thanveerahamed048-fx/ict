@@ -86,7 +86,7 @@ export class ModelBus {
         tpPips: TP_PIPS,
         sessions,
         tsMs: entryTs
-      }).catch(() => {});
+      }).catch((e) => console.error('[mail] send error:', e?.message || e));
 
       // Monitor
       this.monitor?.addTrade({
@@ -122,7 +122,7 @@ export class ModelBus {
         models: [strategyName],
         score: 0,
         variantLabel: `TP${TP_PIPS}/SL${SL_PIPS}`
-      }).catch(() => {});
+      }).catch((e) => console.error('[Dashboard] post error:', e?.message || e));
     };
 
     // PO3

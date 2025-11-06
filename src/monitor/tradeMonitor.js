@@ -49,7 +49,7 @@ export class TradeMonitor {
       entryTs: t.entryTs,
       sessions: t.sessions,
       meta: { cause: t.cause, models: t.models, score: t.score }
-    }).catch(() => {});
+    }).catch((e) => console.error('[mail] send error:', e?.message || e));
 
     // Post to dashboard (await for better error surfacing)
     await postResult({
