@@ -148,15 +148,15 @@ export class ModelBus {
     }
 
     // Others: BREAKER, JUDAS (you’ve chosen not to enter FVGC on tick here)
-    for (const strat of [
-      { name: 'BREAKER', ref: this.breaker },
-      { name: 'JUDAS', ref: this.judas }
-    ]) {
-      const e = strat.ref.onPrice(price);
-      if (!e) continue;
-      const { sl, tp } = this._buildFixedStops(e.entry, e.direction);
-      handleEntry(strat.name, e.direction, e.entry, sl, tp, tsMs);
-    }
+    // for (const strat of [
+    //   { name: 'BREAKER', ref: this.breaker },
+    //   { name: 'JUDAS', ref: this.judas }
+    // ]) {
+    //   const e = strat.ref.onPrice(price);
+    //   if (!e) continue;
+    //   const { sl, tp } = this._buildFixedStops(e.entry, e.direction);
+    //   handleEntry(strat.name, e.direction, e.entry, sl, tp, tsMs);
+    // }
   }
 
   _buildFixedStops(entry, direction) {
