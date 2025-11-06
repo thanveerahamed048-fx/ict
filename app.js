@@ -38,7 +38,7 @@ const SMTP_PASS = process.env.SMTP_PASS || '';
 // const MAIL_THROTTLE_MS = Number(process.env.MAIL_THROTTLE_MS || 60000);
 
 // Email settings (use an App Password if Gmail/Outlook)
-const MAIL_ENABLED = true; // set false to disable emails
+const MAIL_ENABLED = 1; // set false to disable emails
 const SMTP_HOST = 'smtp.gmail.com';
 const SMTP_PORT = 465;         // 465 = SSL, 587 = STARTTLS
 const SMTP_SECURE = 1;      // true for 465, false for 587
