@@ -43,8 +43,8 @@ const SMTP_HOST = 'smtp.gmail.com';
 const SMTP_PORT = 465;         // 465 = SSL, 587 = STARTTLS
 const SMTP_SECURE = 1;      // true for 465, false for 587
 const SMTP_USER = '123ninjaboy456@gmail.com';
-const MAIL_FROM = 'PO3 Signals <thanveerahamed048@gmail.com>';
-const MAIL_TO = ['thanveerahamed048@gmail.com']; // list of recipients
+const MAIL_FROM = 'Forex Signals <123ninjaboy456@gmail.com>';
+const MAIL_TO = 'thanveerahamed048@gmail.com' // list of recipients
 const MAIL_THROTTLE_MS = 60_000;    // min interval per instrument+signal
 // Live feed tracker
 const live = {
@@ -339,25 +339,25 @@ app.get('/trades', async (req, res) => {
 });
 
 app.post('/debug/send-email', async (_req, res) => {
-  try {
-    await mailer.sendSignal({
-      type: 'strategy_entry',
-      strategy: 'TEST',
-      instrumentId: 'PING',
-      decimals: 2,
-      direction: 'buy',
-      entry: 123.45,
-      sl: 122.45,
-      tp: 124.45,
-      slPips: 100,
-      tpPips: 100,
-      sessions: {},
-      tsMs: Date.now()
-    });
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e?.message || String(e) });
-  }
+try {
+await mailer.sendSignal({
+type: 'strategy_entry',
+strategy: 'TEST',
+instrumentId: 'PING',
+decimals: 2,
+direction: 'buy',
+entry: 123.45,
+sl: 122.45,
+tp: 124.45,
+slPips: 100,
+tpPips: 100,
+sessions: {},
+tsMs: Date.now()
+});
+res.json({ ok: true });
+} catch (e) {
+res.status(500).json({ ok: false, error: e?.message || String(e) });
+}
 });
 
 // Trade detail

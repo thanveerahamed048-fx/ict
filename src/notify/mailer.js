@@ -2,41 +2,51 @@
 import nodemailer from 'nodemailer';
 import { DateTime } from 'luxon';
 
+function buildTransport({ host, port, secure, user, pass }) {
+  // secure=true for 465 (SSL), secure=false for 587 (STARTTLS)
+  return nodemailer.createTransport({
+    host,
+    port: Number(port),
+    secure: !!secure,
+    auth: user ? { user, pass } : undefined,
+    logger: true,              // log SMTP activity
+    debug: true,               // verbose SMTP output
+    connectionTimeout: 10000,  // 10s connect timeout
+    greetingTimeout: 10000,    // 10s after connect
+    socketTimeout: 20000,      // 20s overall
+    tls: {
+      minVersion: 'TLSv1.2'
+      // rejectUnauthorized: true
+    }
+  });
+}
+
 export class Mailer {
   constructor({
     host,
     port = 587,
-    secure,                 // true for SSL (465), false for STARTTLS (587)
+    secure,                 // true for 465, false for 587
     user,
     pass,
     from,
     to,                     // array or CSV string
     enabled = true,
-    throttleMs = 60000      // minimum delay per (type, instrument, direction, variant)
+    throttleMs = 60000,
+    // fallback toggling: if verify fails with a timeout, try the other port
+    enableFallback = true
   } = {}) {
     if (secure === undefined) secure = String(port) === '465';
-
     this.enabled = !!enabled;
     this.from = from || user || '';
     this.to = Array.isArray(to) ? to : String(to || '').split(',').map(s => s.trim()).filter(Boolean);
     this.throttleMs = Number(throttleMs) || 0;
     this.lastSent = new Map();
 
-    this.transporter = nodemailer.createTransport({
-      host,
-      port: Number(port),
-      secure,
-      auth: user ? { user, pass } : undefined,
-      logger: true,   // log SMTP activity to console
-      debug: true,    // verbose SMTP output
-      tls: {
-        minVersion: 'TLSv1.2'  // many providers (and cloud envs) require TLS >= 1.2
-        // rejectUnauthorized: true // default; only disable for debugging
-      }
-    });
+    this.cfg = { host, port: Number(port), secure: !!secure, user, pass, enableFallback };
+    this.transporter = buildTransport(this.cfg);
   }
 
-  // Call this once at startup to confirm SMTP is reachable and creds are valid
+  // Try primary; if timeout and fallback enabled, flip port/secure and try again.
   async verify() {
     if (!this.enabled) {
       console.warn('[mailer] disabled (MAIL_ENABLED!=1)');
@@ -44,34 +54,38 @@ export class Mailer {
     }
     try {
       await this.transporter.verify();
-      console.log('[mailer] SMTP connection verified OK');
+      console.log('[mailer] SMTP verify OK:', this._label());
     } catch (e) {
-      console.error('[mailer] SMTP verify failed:', e?.response || e?.message || e);
-      throw e;
+      const msg = e?.message || String(e);
+      console.error('[mailer] SMTP verify failed:', msg, this._label());
+      const timeoutLike = /timeout|timed out|ETIMEDOUT/i.test(msg);
+      if (timeoutLike && this.cfg.enableFallback) {
+        // flip 465<->587
+        const alt = (this.cfg.port === 465)
+          ? { port: 587, secure: false }
+          : { port: 465, secure: true };
+        console.log(`[mailer] trying fallback host/port: ${this.cfg.host}:${alt.port} secure=${alt.secure}`);
+        this.cfg.port = alt.port; this.cfg.secure = alt.secure;
+        this.transporter = buildTransport(this.cfg);
+        await this.transporter.verify(); // throw if still bad
+        console.log('[mailer] SMTP verify OK after fallback:', this._label());
+      } else {
+        throw e;
+      }
     }
   }
 
-  // Sends a trade-related email. Expected payloads:
-  // - { type:'strategy_entry', strategy, instrumentId, direction, entry, sl, tp, slPips, tpPips, decimals, sessions, tsMs }
-  // - { type:'result', instrumentId, direction, outcome:'profit'|'loss', entry, exit, pips, variant, decimals, tsMs, sessions, meta }
-  // - (optional legacy) { type:'po3_entry', ... }
   async sendSignal(signal) {
     if (!this.enabled || !this.to.length) {
       console.warn('[mailer] send skipped (disabled or no recipients)');
       return;
     }
-
-    // Throttle key (avoid spam)
     const key = `${signal.type}:${signal.instrumentId || 'NA'}:${signal.direction || 'na'}:${signal.variant || 'na'}`;
     const now = Date.now();
     const last = this.lastSent.get(key) || 0;
-    if (now - last < this.throttleMs) {
-      // console.log('[mailer] throttled', key);
-      return;
-    }
+    if (now - last < this.throttleMs) return;
 
     const { subject, text, html } = buildEmail(signal);
-
     try {
       const info = await this.transporter.sendMail({
         from: this.from,
@@ -83,41 +97,32 @@ export class Mailer {
       console.log('[mailer] sent:', info.messageId);
       this.lastSent.set(key, now);
     } catch (e) {
-      // Surface errors so you can see what failed (auth, TLS, rate-limit, etc.)
-      console.error('[mailer] send failed:', e?.response || e?.message || e);
+      console.error('[mailer] send failed:', e?.response || e?.message || e, this._label());
       throw e;
     }
   }
+
+  _label() {
+    return `${this.cfg.host}:${this.cfg.port} secure=${this.cfg.secure ? 'true' : 'false'}`;
+  }
 }
 
-/* -------------------------- Email template helpers -------------------------- */
+/* -------------------------- Email templates -------------------------- */
 
-function fmt(px, d = 5) {
-  return px == null || Number.isNaN(px) ? 'n/a' : Number(px).toFixed(d);
-}
-function fmtPips(p) {
-  if (p == null || Number.isNaN(p)) return 'n/a';
-  const sign = p >= 0 ? '+' : '';
-  return `${sign}${p.toFixed(1)} pips`;
-}
-function fmtList(arr, d = 5) {
-  if (!Array.isArray(arr) || arr.length === 0) return 'n/a';
-  return arr.map(x => fmt(x, d)).join(', ');
-}
+function fmt(px, d = 5) { return px == null || Number.isNaN(px) ? 'n/a' : Number(px).toFixed(d); }
+function fmtPips(p) { if (p == null || Number.isNaN(p)) return 'n/a'; const s = p >= 0 ? '+' : ''; return `${s}${p.toFixed(1)} pips`; }
+function fmtList(arr, d = 5) { return !Array.isArray(arr) || arr.length === 0 ? 'n/a' : arr.map(x => fmt(x, d)).join(', '); }
 const labelPips = (name, pips) => pips != null ? `${name} (${pips} pips)` : name;
 
 function buildEmail(signal) {
   const d = signal.decimals ?? 5;
   const ses = signal.sessions || {};
-  const tsNY = signal.tsMs
-    ? DateTime.fromMillis(signal.tsMs, { zone: 'America/New_York' }).toFormat('yyyy-LL-dd HH:mm:ss')
-    : '';
-
+  const tsNY = signal.tsMs ? DateTime.fromMillis(signal.tsMs, { zone: 'America/New_York' }).toFormat('yyyy-LL-dd HH:mm:ss') : '';
   const header = `${signal.instrumentId || '—'} • ${String(signal.type || '').replace('_',' ').toUpperCase()}`;
+
   let subject = '';
   let mainRows = '';
 
-  // Strategy entry (your main case)
   if (signal.type === 'strategy_entry') {
     subject = `${signal.strategy} ENTRY ${String(signal.direction || '').toUpperCase()} — ${signal.instrumentId} @ ${fmt(signal.entry, d)}`;
     mainRows = `
@@ -129,9 +134,7 @@ function buildEmail(signal) {
       ${signal.sl != null ? `<tr><td>${labelPips('SL', signal.slPips)}</td><td>${fmt(signal.sl, d)}</td></tr>` : ''}
       ${signal.tp != null ? `<tr><td>${labelPips('TP', signal.tpPips)}</td><td>${fmt(signal.tp, d)}</td></tr>` : ''}
     `;
-  }
-  // Result (from TradeMonitor)
-  else if (signal.type === 'result') {
+  } else if (signal.type === 'result') {
     const outcome = String(signal.outcome || '').toUpperCase();
     const variant = signal.variant || (signal.tpPips && signal.slPips ? `TP${signal.tpPips}/SL${signal.slPips}` : 'FixedPips');
     subject = `RESULT ${outcome} ${variant} — ${signal.instrumentId} ${fmt(signal.entry, d)} → ${fmt(signal.exit, d)} (${fmtPips(signal.pips)})`;
@@ -145,9 +148,7 @@ function buildEmail(signal) {
       ${signal.meta?.models ? `<tr><td>Models</td><td>${Array.isArray(signal.meta.models) ? signal.meta.models.join(', ') : signal.meta.models}</td></tr>` : ''}
       ${signal.meta?.score != null ? `<tr><td>Score</td><td>${signal.meta.score}</td></tr>` : ''}
     `;
-  }
-  // Optional legacy (if still emitted anywhere)
-  else if (signal.type === 'po3_entry') {
+  } else if (signal.type === 'po3_entry') {
     const rrStr = (signal.rrs || []).map(x => Number(x).toFixed(2)).join(' / ');
     subject = `PO3 ENTRY ${String(signal.direction || '').toUpperCase()} — ${signal.instrumentId} @ ${fmt(signal.entry, d)} (RRs ${rrStr})`;
     mainRows = `
@@ -161,7 +162,6 @@ function buildEmail(signal) {
     subject = `Signal — ${signal.instrumentId || ''}`;
   }
 
-  // Context section
   const contextRows = `
     ${ses.dailyOpen != null ? `<tr><td>Daily Open</td><td>${fmt(ses.dailyOpen, d)}</td></tr>` : ''}
     ${ses.asiaLo != null && ses.asiaHi != null ? `<tr><td>Asia Range</td><td>${fmt(ses.asiaLo, d)} — ${fmt(ses.asiaHi, d)}</td></tr>` : ''}
@@ -184,7 +184,6 @@ function buildEmail(signal) {
       This alert is informational and not financial advice.
     </div>
   </div>`;
-
   const text = [
     header,
     ...(signal.type === 'strategy_entry' ? [
