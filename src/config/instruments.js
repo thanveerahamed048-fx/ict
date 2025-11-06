@@ -14,4 +14,4 @@ export const CRYPTO_INSTRUMENTS = [
   { id: 'SOLUSDT', feed: 'binance', feedSymbol: 'solusdt', tick: 0.001, decimals: 3 },
 ];
 
-export const INSTRUMENTS = [...FX_INSTRUMENTS, ...CRYPTO_INSTRUMENTS];
+export const INSTRUMENTS = [...FX_INSTRUMENTS];
