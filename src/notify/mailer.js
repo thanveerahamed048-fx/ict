@@ -1,19 +1,17 @@
-// src/notify/mailer.js
 import nodemailer from 'nodemailer';
 import { DateTime } from 'luxon';
 
 function buildTransport({ host, port, secure, user, pass }) {
-  // secure=true for 465 (SSL), secure=false for 587 (STARTTLS)
   return nodemailer.createTransport({
     host,
     port: Number(port),
-    secure: !!secure,
+    secure: !!secure,              // true=SSL (465), false=STARTTLS (587)
     auth: user ? { user, pass } : undefined,
-    logger: true,              // log SMTP activity
-    debug: true,               // verbose SMTP output
-    connectionTimeout: 10000,  // 10s connect timeout
-    greetingTimeout: 10000,    // 10s after connect
-    socketTimeout: 20000,      // 20s overall
+    logger: true,
+    debug: true,
+    connectionTimeout: 10000,      // 10s
+    greetingTimeout: 10000,
+    socketTimeout: 20000,          // 20s
     tls: {
       minVersion: 'TLSv1.2'
       // rejectUnauthorized: true
@@ -25,14 +23,13 @@ export class Mailer {
   constructor({
     host,
     port = 587,
-    secure,                 // true for 465, false for 587
+    secure,
     user,
     pass,
     from,
-    to,                     // array or CSV string
+    to,
     enabled = true,
     throttleMs = 60000,
-    // fallback toggling: if verify fails with a timeout, try the other port
     enableFallback = true
   } = {}) {
     if (secure === undefined) secure = String(port) === '465';
@@ -46,7 +43,6 @@ export class Mailer {
     this.transporter = buildTransport(this.cfg);
   }
 
-  // Try primary; if timeout and fallback enabled, flip port/secure and try again.
   async verify() {
     if (!this.enabled) {
       console.warn('[mailer] disabled (MAIL_ENABLED!=1)');
@@ -58,17 +54,8 @@ export class Mailer {
     } catch (e) {
       const msg = e?.message || String(e);
       console.error('[mailer] SMTP verify failed:', msg, this._label());
-      const timeoutLike = /timeout|timed out|ETIMEDOUT/i.test(msg);
-      if (timeoutLike && this.cfg.enableFallback) {
-        // flip 465<->587
-        const alt = (this.cfg.port === 465)
-          ? { port: 587, secure: false }
-          : { port: 465, secure: true };
-        console.log(`[mailer] trying fallback host/port: ${this.cfg.host}:${alt.port} secure=${alt.secure}`);
-        this.cfg.port = alt.port; this.cfg.secure = alt.secure;
-        this.transporter = buildTransport(this.cfg);
-        await this.transporter.verify(); // throw if still bad
-        console.log('[mailer] SMTP verify OK after fallback:', this._label());
+      if (this._isTimeout(msg) && this.cfg.enableFallback) {
+        await this._flipAndVerify();
       } else {
         throw e;
       }
@@ -94,12 +81,48 @@ export class Mailer {
         text,
         html
       });
-      console.log('[mailer] sent:', info.messageId);
+      console.log('[mailer] sent:', info.messageId, this._label());
       this.lastSent.set(key, now);
     } catch (e) {
-      console.error('[mailer] send failed:', e?.response || e?.message || e, this._label());
-      throw e;
+      const msg = e?.message || String(e);
+      console.error('[mailer] send failed:', msg, this._label());
+      // If send timed out and fallback is allowed, flip port/secure and retry once
+      if (this._isTimeout(msg) && this.cfg.enableFallback) {
+        try {
+          await this._flipAndVerify();
+          const info2 = await this.transporter.sendMail({
+            from: this.from,
+            to: this.to.join(','),
+            subject,
+            text,
+            html
+          });
+          console.log('[mailer] sent after fallback:', info2.messageId, this._label());
+          this.lastSent.set(key, now);
+        } catch (e2) {
+          console.error('[mailer] fallback send failed:', e2?.message || String(e2), this._label());
+          throw e2;
+        }
+      } else {
+        throw e;
+      }
     }
+  }
+
+  async _flipAndVerify() {
+    const alt = (this.cfg.port === 465)
+      ? { port: 587, secure: false }
+      : { port: 465, secure: true };
+    console.log(`[mailer] trying fallback ${this.cfg.host}:${alt.port} secure=${alt.secure}`);
+    this.cfg.port = alt.port;
+    this.cfg.secure = alt.secure;
+    this.transporter = buildTransport(this.cfg);
+    await this.transporter.verify();
+    console.log('[mailer] SMTP verify OK after fallback:', this._label());
+  }
+
+  _isTimeout(msg) {
+    return /timeout|timed out|ETIMEDOUT|Connection closed/i.test(msg);
   }
 
   _label() {
@@ -107,7 +130,7 @@ export class Mailer {
   }
 }
 
-/* -------------------------- Email templates -------------------------- */
+/* ----------------------- Email template helpers ----------------------- */
 
 function fmt(px, d = 5) { return px == null || Number.isNaN(px) ? 'n/a' : Number(px).toFixed(d); }
 function fmtPips(p) { if (p == null || Number.isNaN(p)) return 'n/a'; const s = p >= 0 ? '+' : ''; return `${s}${p.toFixed(1)} pips`; }

@@ -7,7 +7,7 @@ import { MongoClient } from 'mongodb';
 import { DateTime } from 'luxon';
 import path from 'path';
 import { fileURLToPath } from 'url';
-
+import net from 'node:net';
 // Bot pieces
 import { FinnhubWS } from './src/feeds/finnhub.js';
 import { CandleAggregator } from './src/core/candleAggregator.js';
@@ -358,6 +358,25 @@ res.json({ ok: true });
 } catch (e) {
 res.status(500).json({ ok: false, error: e?.message || String(e) });
 }
+});
+
+app.get('/debug/smtp-check', async (req, res) => {
+  const host = process.env.SMTP_HOST || 'smtp.gmail.com';
+  const port = Number(process.env.SMTP_PORT || 465);
+  const start = Date.now();
+  const sock = net.connect({ host, port });
+  let done = false;
+
+  const finish = (ok, err) => {
+    if (done) return;
+    done = true;
+    try { sock.destroy(); } catch {}
+    res.json({ ok, ms: Date.now() - start, host, port, err: err?.message });
+  };
+
+  sock.on('connect', () => finish(true, null));
+  sock.on('error', (e) => finish(false, e));
+  sock.setTimeout(8000, () => finish(false, new Error('timeout')));
 });
 
 // Trade detail
