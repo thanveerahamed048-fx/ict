@@ -9,6 +9,7 @@ import { JudasSwing } from '../strategies/judasSwing.js';
 import { PrevDayIFVG } from '../strategies/prevDayIFVG.js';
 import { postStrategyEntry } from '../notify/dashboardClient.js';
 import { NyRangeOB } from '../strategies/nyRangeOB.js';
+import { CandleRangeEntry } from '../strategies/candleRangeEntry.js';
 
 // CONFIG: fixed pip distances (keep equal => 1:1 RR)
 const TP_PIPS = 60;
@@ -29,6 +30,22 @@ export class ModelBus {
     this.judas = new JudasSwing({ decimals: instrument.decimals, pipSize: instrument.pipSize });
     this.pdifvg = new PrevDayIFVG({ decimals: instrument.decimals, pipSize: instrument.pipSize, touchPips: 3 });
     this.nyRangeOB = new NyRangeOB({ decimals: instrument.decimals, pipSize: instrument.pipSize });
+    
+    this.candleRange = new CandleRangeEntry({
+  decimals: instrument.decimals,
+  pipSize: instrument.pipSize,
+  startHourNY: 8.5,   // 08:30
+  endHourNY: 11,
+  useAsia: true,
+  usePrevDay: true,
+  useDO: true,
+  dispAtrMult: 1.2,
+  minBodyPips: 0,
+  expiryMin: 60,
+  levels: ['fvgMid', 'ob50', 'body50', 'range50', 'obOpen'],
+  touchPips: 1,
+  oneTradePerDay: true
+});
 
     this.lastDayKey = null;
     this.lastPrice = null;
@@ -62,6 +79,8 @@ export class ModelBus {
     this.judas.evaluate({ candles: M1, sessions });
     this.pdifvg.evaluate({ m5: M5, sessions });
     this.nyRangeOB.onM1Close(candle); // NEW - feed M1 closes to build 17–21h 4H and M3
+    this.candleRange.onM1Close(candle, sessions, M1);
+    
   }
 
   onTick(price, tsMs) {
@@ -147,6 +166,11 @@ export class ModelBus {
       handleEntry('NYRangeOB', nyob.direction, nyob.entry, sl, tp, tsMs);
     }
 
+        const sigCR = this.candleRange.onTick(price, tsMs, sessions);
+    if (sigCR) {
+      const { sl, tp } = this._buildFixedStops(sigCR.entry, sigCR.direction);
+      handleEntry('CandleRange', sigCR.direction, sigCR.entry, sl, tp, tsMs);
+    }
     // Others: BREAKER, JUDAS (you’ve chosen not to enter FVGC on tick here)
     // for (const strat of [
     //   { name: 'BREAKER', ref: this.breaker },
