@@ -7,7 +7,7 @@
 
 import { msToNY, nyDayKey } from '../utils/time.js';
 import { detectFVG } from '../patterns/fvg.js';
-import { atr as atr14 } from '../util/ta.js';
+import { atr as atr14 } from '../utils/ta.js';
 
 export class CandleRangeEntry {
   constructor({
