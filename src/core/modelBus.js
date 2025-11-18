@@ -10,10 +10,7 @@ import { PrevDayIFVG } from '../strategies/prevDayIFVG.js';
 import { postStrategyEntry } from '../notify/dashboardClient.js';
 import { NyRangeOB } from '../strategies/nyRangeOB.js';
 import { CandleRangeEntry } from '../strategies/candleRangeEntry.js';
-
-// CONFIG: fixed pip distances (keep equal => 1:1 RR)
-const TP_PIPS = 60;
-const SL_PIPS = 80;
+import { RR_BY_SYMBOL, DEFAULT_RR } from '../config/rr.js';
 
 export class ModelBus {
   constructor({ instrument, aggregator, log, notifier, monitor }) {
@@ -30,25 +27,31 @@ export class ModelBus {
     this.judas = new JudasSwing({ decimals: instrument.decimals, pipSize: instrument.pipSize });
     this.pdifvg = new PrevDayIFVG({ decimals: instrument.decimals, pipSize: instrument.pipSize, touchPips: 3 });
     this.nyRangeOB = new NyRangeOB({ decimals: instrument.decimals, pipSize: instrument.pipSize });
-    
+
     this.candleRange = new CandleRangeEntry({
-  decimals: instrument.decimals,
-  pipSize: instrument.pipSize,
-  startHourNY: 8.5,   // 08:30
-  endHourNY: 11,
-  useAsia: true,
-  usePrevDay: true,
-  useDO: true,
-  dispAtrMult: 1.2,
-  minBodyPips: 0,
-  expiryMin: 60,
-  levels: ['fvgMid', 'ob50', 'body50', 'range50', 'obOpen'],
-  touchPips: 1,
-  oneTradePerDay: true
-});
+      decimals: instrument.decimals,
+      pipSize: instrument.pipSize,
+      startHourNY: 8.5,   // 08:30
+      endHourNY: 11,
+      useAsia: true,
+      usePrevDay: true,
+      useDO: true,
+      dispAtrMult: 1.2,
+      minBodyPips: 0,
+      expiryMin: 60,
+      levels: ['fvgMid', 'ob50', 'body50', 'range50', 'obOpen'],
+      touchPips: 1,
+      oneTradePerDay: true
+    });
 
     this.lastDayKey = null;
     this.lastPrice = null;
+  }
+
+  // Per-instrument TP/SL pips
+  _getRR() {
+    const id = this.instrument?.id || '';
+    return RR_BY_SYMBOL[id] || DEFAULT_RR; // { tpPips, slPips }
   }
 
   onM1Close(candle) {
@@ -61,7 +64,8 @@ export class ModelBus {
       this.po3.resetDay?.();
       this.judas.resetDay?.();
       this.pdifvg.resetDay?.();
-      this.nyRangeOB.resetDay?.(); // NEW - reset 4H-range strategy on day roll
+      this.nyRangeOB.resetDay?.();
+      this.candleRange.resetDay?.();
       this.lastDayKey = dKey;
       this._log(`New NY day. Prev H/L: ${fmtPx(sessions.prevDayHigh, this.instrument.decimals)} / ${fmtPx(sessions.prevDayLow, this.instrument.decimals)}`);
     }
@@ -78,18 +82,20 @@ export class ModelBus {
     this.breaker.evaluate({ candles: M1, sessions });
     this.judas.evaluate({ candles: M1, sessions });
     this.pdifvg.evaluate({ m5: M5, sessions });
-    this.nyRangeOB.onM1Close(candle); // NEW - feed M1 closes to build 17–21h 4H and M3
+    this.nyRangeOB.onM1Close(candle);
     this.candleRange.onM1Close(candle, sessions, M1);
-    
   }
 
   onTick(price, tsMs) {
     this.lastPrice = price;
     const sessions = this.aggregator.getSessions();
 
+    const rr = this._getRR();
+    const variant = `TP${rr.tpPips}/SL${rr.slPips}`;
+
     const handleEntry = async (strategyName, direction, entryPx, slPx, tpPx, entryTs) => {
       const tid = `${this.instrument.id}-${strategyName}-${entryTs}`;
-      this._log(`${strategyName} ENTRY ${direction.toUpperCase()} @ ${entryPx.toFixed(this.instrument.decimals)} SL ${slPx.toFixed(this.instrument.decimals)} TP ${tpPx.toFixed(this.instrument.decimals)} (TP+${TP_PIPS}p / SL-${SL_PIPS}p) id=${tid}`);
+      this._log(`${strategyName} ENTRY ${direction.toUpperCase()} @ ${entryPx.toFixed(this.instrument.decimals)} SL ${slPx.toFixed(this.instrument.decimals)} TP ${tpPx.toFixed(this.instrument.decimals)} (${variant}) id=${tid}`);
 
       // Email
       this.notifier?.sendSignal({
@@ -101,8 +107,8 @@ export class ModelBus {
         entry: entryPx,
         sl: slPx,
         tp: tpPx,
-        slPips: SL_PIPS,
-        tpPips: TP_PIPS,
+        slPips: rr.slPips,
+        tpPips: rr.tpPips,
         sessions,
         tsMs: entryTs
       }).catch((e) => console.error('[mail] send error:', e?.message || e));
@@ -118,7 +124,7 @@ export class ModelBus {
         pipSize: this.instrument.pipSize,
         decimals: this.instrument.decimals,
         cause: strategyName,
-        variantLabel: `TP${TP_PIPS}/SL${SL_PIPS}`,
+        variantLabel: variant,
         sessions,
         models: [strategyName],
         score: 0
@@ -135,12 +141,12 @@ export class ModelBus {
         tp: tpPx,
         pipSize: this.instrument.pipSize,
         decimals: this.instrument.decimals,
-        tpPips: TP_PIPS,
-        slPips: SL_PIPS,
+        tpPips: rr.tpPips,
+        slPips: rr.slPips,
         sessions,
         models: [strategyName],
         score: 0,
-        variantLabel: `TP${TP_PIPS}/SL${SL_PIPS}`
+        variantLabel: variant
       }).catch((e) => console.error('[Dashboard] post error:', e?.message || e));
     };
 
@@ -159,34 +165,28 @@ export class ModelBus {
       handleEntry('PDIFVG', pd.direction, pd.entry, sl, tp, tsMs);
     }
 
-    // NYRangeOB (17–21 NY 4H range + OB retest after 21:00 NY)
+    // NYRangeOB
     const nyob = this.nyRangeOB.onTick(price, tsMs);
     if (nyob) {
       const { sl, tp } = this._buildFixedStops(nyob.entry, nyob.direction);
       handleEntry('NYRangeOB', nyob.direction, nyob.entry, sl, tp, tsMs);
     }
 
-        const sigCR = this.candleRange.onTick(price, tsMs, sessions);
+    // CandleRange (ICT displacement candle retrace)
+    const sigCR = this.candleRange.onTick(price, tsMs, sessions);
     if (sigCR) {
       const { sl, tp } = this._buildFixedStops(sigCR.entry, sigCR.direction);
       handleEntry('CandleRange', sigCR.direction, sigCR.entry, sl, tp, tsMs);
     }
-    // Others: BREAKER, JUDAS (you’ve chosen not to enter FVGC on tick here)
-    // for (const strat of [
-    //   { name: 'BREAKER', ref: this.breaker },
-    //   { name: 'JUDAS', ref: this.judas }
-    // ]) {
-    //   const e = strat.ref.onPrice(price);
-    //   if (!e) continue;
-    //   const { sl, tp } = this._buildFixedStops(e.entry, e.direction);
-    //   handleEntry(strat.name, e.direction, e.entry, sl, tp, tsMs);
-    // }
+
+    // Others: BREAKER, JUDAS if you want to re-enable on-tick entry later.
   }
 
   _buildFixedStops(entry, direction) {
+    const { tpPips, slPips } = this._getRR();
     const pip = this.instrument.pipSize;
-    const tpDist = TP_PIPS * pip;
-    const slDist = SL_PIPS * pip;
+    const tpDist = tpPips * pip;
+    const slDist = slPips * pip;
     if (direction === 'buy') return { sl: entry - slDist, tp: entry + tpDist };
     return { sl: entry + slDist, tp: entry - tpDist };
   }
