@@ -11,6 +11,8 @@ import { postStrategyEntry } from '../notify/dashboardClient.js';
 import { NyRangeOB } from '../strategies/nyRangeOB.js';
 import { CandleRangeEntry } from '../strategies/candleRangeEntry.js';
 import { RR_BY_SYMBOL, DEFAULT_RR } from '../config/rr.js';
+import { ORB } from '../strategies/orb.js';
+import { GoldTimeStrategy } from '../strategies/goldTime.js';
 
 export class ModelBus {
   constructor({ instrument, aggregator, log, notifier, monitor }) {
@@ -44,7 +46,32 @@ export class ModelBus {
       oneTradePerDay: true
     });
 
-    this.lastDayKey = null;
+        this.orb = new ORB({
+      decimals: instrument.decimals,
+      pipSize: instrument.pipSize,
+      startHourNY: 9.5,   // 9:30 NY
+      durationMin: 30,    // or 15 to match your Pine input
+      confirmByClose: true,    // require the last M1 to close beyond range
+      reverseLogic: false,
+      allowSecondChance: false, // true to allow a second entry (not tied to loss)
+      maxEntriesPerDay: 1,      // 1 or 2
+      touchPips: 0,             // allow exact touch
+      eodEndHourNY: 16.5        // ignore after 16:30 NY
+    });
+
+    // inside constructor after your other strategies:
+    this.goldTime = null;
+    if (this.instrument?.id === 'XAUUSD' || (this.instrument?.id || '').includes('XAU')) {
+      this.goldTime = new GoldTimeStrategy({
+        decimals: instrument.decimals,
+        pipSize: instrument.pipSize,
+        length: 14,           // Pine default
+        checkHourNY: 4,       // 04:00 NY (adjust to your Pine input)
+        tradeDurationHours: 8,
+        oneTradePerDay: true
+      });
+    }
+        this.lastDayKey = null;
     this.lastPrice = null;
   }
 
@@ -66,6 +93,8 @@ export class ModelBus {
       this.pdifvg.resetDay?.();
       this.nyRangeOB.resetDay?.();
       this.candleRange.resetDay?.();
+      this.orb.resetDay?.();
+      this.goldTime?.resetDay?.();
       this.lastDayKey = dKey;
       this._log(`New NY day. Prev H/L: ${fmtPx(sessions.prevDayHigh, this.instrument.decimals)} / ${fmtPx(sessions.prevDayLow, this.instrument.decimals)}`);
     }
@@ -84,6 +113,8 @@ export class ModelBus {
     this.pdifvg.evaluate({ m5: M5, sessions });
     this.nyRangeOB.onM1Close(candle);
     this.candleRange.onM1Close(candle, sessions, M1);
+    this.orb.onM1Close(candle, sessions);
+    this.goldTime?.onM1Close(candle, sessions, M1);
   }
 
   onTick(price, tsMs) {
@@ -179,7 +210,19 @@ export class ModelBus {
       handleEntry('CandleRange', sigCR.direction, sigCR.entry, sl, tp, tsMs);
     }
 
-    // Others: BREAKER, JUDAS if you want to re-enable on-tick entry later.
+        // ORB entry
+    const sigORB = this.orb.onTick(price, tsMs, sessions);
+    if (sigORB) {
+      const { sl, tp } = this._buildFixedStops(sigORB.entry, sigORB.direction);
+      handleEntry('ORB', sigORB.direction, sigORB.entry, sl, tp, tsMs);
+    }
+
+    const gt = this.goldTime?.onTick(price, tsMs, sessions);
+    if (gt) {
+      const { sl, tp } = this._buildFixedStops(gt.entry, gt.direction);
+      handleEntry('GoldTime', gt.direction, gt.entry, sl, tp, tsMs);
+    }
+        // Others: BREAKER, JUDAS if you want to re-enable on-tick entry later.
   }
 
   _buildFixedStops(entry, direction) {
