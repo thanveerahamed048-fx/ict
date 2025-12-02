@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8" />
   <title>Trading Dashboard</title>
@@ -9,9 +10,15 @@
   <link rel="stylesheet" href="./style.css" />
   <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
 </head>
+
 <body>
   <header class="topbar">
     <div class="brand">Trade Dashboard</div>
+    <div class="nav-links" style="margin-left: 20px;">
+      <a href="./index.html" class="nav-link active"
+        style="color: #E6EDF3; text-decoration: none; font-weight: 600; margin-right: 15px;">Home</a>
+      <a href="./strategies.html" class="nav-link" style="color: #A9B4C0; text-decoration: none;">Strategy Stats</a>
+    </div>
     <div class="controls">
       <div class="control">
         <label>Date range</label>
@@ -33,21 +40,48 @@
 
   <main class="container">
     <section class="kpis">
-      <div class="card kpi"><div class="kpi-label">Signals</div><div class="kpi-value" id="kpiSignals">0</div></div>
-      <div class="card kpi"><div class="kpi-label">Open</div><div class="kpi-value" id="kpiOpen">0</div></div>
-      <div class="card kpi"><div class="kpi-label">Closed</div><div class="kpi-value" id="kpiClosed">0</div></div>
-      <div class="card kpi"><div class="kpi-label">Win Rate</div><div class="kpi-value" id="kpiWinRate">0%</div></div>
-      <div class="card kpi"><div class="kpi-label">Net Pips</div><div class="kpi-value profit" id="kpiNetPips">0</div></div>
-      <div class="card kpi"><div class="kpi-label">Avg Pips</div><div class="kpi-value" id="kpiAvgPips">0</div></div>
+      <div class="card kpi">
+        <div class="kpi-label">Signals</div>
+        <div class="kpi-value" id="kpiSignals">0</div>
+      </div>
+      <div class="card kpi">
+        <div class="kpi-label">Open</div>
+        <div class="kpi-value" id="kpiOpen">0</div>
+      </div>
+      <div class="card kpi">
+        <div class="kpi-label">Closed</div>
+        <div class="kpi-value" id="kpiClosed">0</div>
+      </div>
+      <div class="card kpi">
+        <div class="kpi-label">Win Rate</div>
+        <div class="kpi-value" id="kpiWinRate">0%</div>
+      </div>
+      <div class="card kpi">
+        <div class="kpi-label">Net Pips</div>
+        <div class="kpi-value profit" id="kpiNetPips">0</div>
+      </div>
+      <div class="card kpi">
+        <div class="kpi-label">Avg Pips</div>
+        <div class="kpi-value" id="kpiAvgPips">0</div>
+      </div>
     </section>
 
     <section class="grid-2">
-      <div class="card"><div class="card-title">Equity Curve (Net Pips)</div><div id="equityChart" class="chart"></div></div>
-      <div class="card"><div class="card-title">Daily P/L</div><div id="dailyChart" class="chart"></div></div>
+      <div class="card">
+        <div class="card-title">Equity Curve (Net Pips)</div>
+        <div id="equityChart" class="chart"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Daily P/L</div>
+        <div id="dailyChart" class="chart"></div>
+      </div>
     </section>
 
     <section class="grid-2">
-      <div class="card"><div class="card-title">By Strategy</div><div id="strategyChart" class="chart"></div></div>
+      <div class="card">
+        <div class="card-title">By Strategy</div>
+        <div id="strategyChart" class="chart"></div>
+      </div>
       <div class="card">
         <div class="card-title">Filters</div>
         <div class="filters">
@@ -55,12 +89,14 @@
             <label>Strategies</label>
             <div class="chips">
               <label><input type="checkbox" class="strategyChk" value="PO3" checked /> PO3</label>
-              <label><input type="checkbox" class="strategyChk" value="FVGC"  /> FVGC</label>
-              <label><input type="checkbox" class="strategyChk" value="BREAKER"  /> BREAKER</label>
-              <label><input type="checkbox" class="strategyChk" value="JUDAS"  /> JUDAS</label>
-               <label><input type="checkbox" class="strategyChk" value="CandleRange" checked /> CandleRange</label>
-                <label><input type="checkbox" class="strategyChk" value="NYRangeOB" checked /> NYRangeOB</label>
-                 <label><input type="checkbox" class="strategyChk" value="prevDayIFVG" checked /> prevDayIFVG</label>
+              <label><input type="checkbox" class="strategyChk" value="FVGC" /> FVGC</label>
+              <label><input type="checkbox" class="strategyChk" value="BREAKER" /> BREAKER</label>
+              <label><input type="checkbox" class="strategyChk" value="JUDAS" /> JUDAS</label>
+              <label><input type="checkbox" class="strategyChk" value="CandleRange" checked /> CandleRange</label>
+              <label><input type="checkbox" class="strategyChk" value="NYRangeOB" checked /> NYRangeOB</label>
+              <label><input type="checkbox" class="strategyChk" value="prevDayIFVG" checked /> prevDayIFVG</label>
+              <label><input type="checkbox" class="strategyChk" value="ORB" checked /> ORB</label>
+              <label><input type="checkbox" class="strategyChk" value="GoldTime" checked /> Gold</label>
             </div>
           </div>
           <div class="filter-group">
@@ -131,4 +167,5 @@
 
   <script src="./app.js"></script>
 </body>
+
 </html>

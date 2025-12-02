@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Strategy Stats - Trading Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./style.css" />
+</head>
+
+<body>
+    <header class="topbar">
+        <div class="brand">Trade Dashboard</div>
+        <div class="nav-links" style="margin-left: 20px;">
+            <a href="./index.html" class="nav-link"
+                style="color: #A9B4C0; text-decoration: none; margin-right: 15px;">Home</a>
+            <a href="./strategies.html" class="nav-link active"
+                style="color: #E6EDF3; text-decoration: none; font-weight: 600;">Strategy Stats</a>
+        </div>
+        <div class="controls">
+            <button id="refreshBtn" class="btn primary">Refresh</button>
+        </div>
+    </header>
+
+    <main class="container">
+        <section class="card">
+            <div class="card-title">Strategy Performance</div>
+            <div class="table-wrap">
+                <table class="table" id="statsTable">
+                    <thead>
+                        <tr>
+                            <th>Strategy</th>
+                            <th>Signals</th>
+                            <th>Wins</th>
+                            <th>Losses</th>
+                            <th>Win Rate</th>
+                            <th>Net Pips</th>
+                        </tr>
+                    </thead>
+                    <tbody id="statsBody"></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <footer class="footer">© Your Trading Bot</footer>
+
+    <script src="./strategies.js"></script>
+</body>
+
+</html>
