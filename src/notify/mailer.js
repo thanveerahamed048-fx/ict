@@ -9,9 +9,9 @@ function buildTransport({ host, port, secure, user, pass }) {
     auth: user ? { user, pass } : undefined,
     // logger: true,
     // debug: true,
-    connectionTimeout: 10000,      // 10s
-    greetingTimeout: 10000,
-    socketTimeout: 20000,          // 20s
+    connectionTimeout: 30000,      // 30s
+    greetingTimeout: 15000,
+    socketTimeout: 30000,          // 30s
     tls: {
       minVersion: 'TLSv1.2'
       // rejectUnauthorized: true

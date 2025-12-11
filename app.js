@@ -424,10 +424,10 @@ const mailer = new Mailer({
   throttleMs: MAIL_THROTTLE_MS
 });
 
-mailer.verify().catch((e) => {
-  // keep running, but surface why SMTP fails
-  console.error('[mailer] verify error:', e?.message || e);
-});
+// mailer.verify().catch((e) => {
+//   // keep running, but surface why SMTP fails
+//   console.error('[mailer] verify error:', e?.message || e);
+// });
 // ====== BOT (WS, strategies) ======
 const instrumentMap = new Map(INSTRUMENTS.map(i => [i.id, i]));
 const monitor = new TradeMonitor({ notifier: mailer, instrumentMap });
