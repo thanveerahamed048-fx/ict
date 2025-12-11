@@ -7,8 +7,8 @@ function buildTransport({ host, port, secure, user, pass }) {
     port: Number(port),
     secure: !!secure,              // true=SSL (465), false=STARTTLS (587)
     auth: user ? { user, pass } : undefined,
-    logger: true,
-    debug: true,
+    // logger: true,
+    // debug: true,
     connectionTimeout: 10000,      // 10s
     greetingTimeout: 10000,
     socketTimeout: 20000,          // 20s
@@ -70,7 +70,10 @@ export class Mailer {
     const key = `${signal.type}:${signal.instrumentId || 'NA'}:${signal.direction || 'na'}:${signal.variant || 'na'}`;
     const now = Date.now();
     const last = this.lastSent.get(key) || 0;
-    if (now - last < this.throttleMs) return;
+    if (now - last < this.throttleMs) {
+      console.log(`[mailer] throttled: ${key} (last sent ${Math.round((now - last) / 1000)}s ago)`);
+      return;
+    }
 
     const { subject, text, html } = buildEmail(signal);
     try {
@@ -141,7 +144,7 @@ function buildEmail(signal) {
   const d = signal.decimals ?? 5;
   const ses = signal.sessions || {};
   const tsNY = signal.tsMs ? DateTime.fromMillis(signal.tsMs, { zone: 'America/New_York' }).toFormat('yyyy-LL-dd HH:mm:ss') : '';
-  const header = `${signal.instrumentId || '—'} • ${String(signal.type || '').replace('_',' ').toUpperCase()}`;
+  const header = `${signal.instrumentId || '—'} • ${String(signal.type || '').replace('_', ' ').toUpperCase()}`;
 
   let subject = '';
   let mainRows = '';
