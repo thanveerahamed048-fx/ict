@@ -46,6 +46,9 @@ const SMTP_USER = '123ninjaboy456@gmail.com';
 const MAIL_FROM = 'Forex Signals <123ninjaboy456@gmail.com>';
 const MAIL_TO = 'thanveerahamed048@gmail.com' // list of recipients
 const MAIL_THROTTLE_MS = 60_000;    // min interval per instrument+signal
+
+console.log(`[config] SMTP_USER=${SMTP_USER} PASS=${SMTP_PASS ? 'SET' : 'UNSET'} PORT=${SMTP_PORT} SECURE=${SMTP_SECURE}`);
+
 // Live feed tracker
 const live = {
   ws: { connected: false, lastOpenAt: 0, lastMsgAt: 0 },
@@ -115,11 +118,11 @@ app.get('/debug/ticks', (_req, res) => {
     const t = live.ticks.get(inst.id);
     return t
       ? {
-          instrumentId: inst.id,
-          price: Number(t.price.toFixed(inst.decimals)),
-          tsMs: t.tsMs,
-          ageSec: Math.round((now - t.tsMs) / 1000)
-        }
+        instrumentId: inst.id,
+        price: Number(t.price.toFixed(inst.decimals)),
+        tsMs: t.tsMs,
+        ageSec: Math.round((now - t.tsMs) / 1000)
+      }
       : { instrumentId: inst.id, price: null, tsMs: null, ageSec: null };
   });
   res.json({
@@ -233,55 +236,69 @@ app.post('/_internal/result', async (req, res) => {
 app.get('/stats/summary', async (_req, res) => {
   try {
     const totalsAgg = await trades.aggregate([
-      { $facet: {
-        counts: [
-          { $group: {
-            _id: null,
-            signals: { $sum: 1 },
-            open: { $sum: { $cond: [{ $eq: ['$status', 'open'] }, 1, 0] } },
-            closed: { $sum: { $cond: [{ $eq: ['$status', 'closed'] }, 1, 0] } },
-            wins: { $sum: { $cond: [{ $and: [{ $eq: ['$status', 'closed'] }, { $gt: ['$resultPips', 0] }] }, 1, 0] } },
-            losses:{ $sum: { $cond: [{ $and: [{ $eq: ['$status', 'closed'] }, { $lte: ['$resultPips', 0] }] }, 1, 0] } },
-            netPips: { $sum: { $cond: [{ $eq: ['$status', 'closed'] }, '$resultPips', 0] } },
-            sumPips: { $sum: { $cond: [{ $eq: ['$status', 'closed'] }, '$resultPips', 0] } },
-            cntClosed: { $sum: { $cond: [{ $eq: ['$status', 'closed'] }, 1, 0] } }
-          }},
-          { $project: {
-            _id: 0,
-            signals: 1, open: 1, closed: 1, wins: 1, losses: 1, netPips: 1,
-            winRate: { $cond: [{ $gt: [{ $add: ['$wins', '$losses'] }, 0] }, { $divide: ['$wins', { $add: ['$wins', '$losses'] }] }, 0] },
-            avgPips: { $cond: [{ $gt: ['$cntClosed', 0] }, { $divide: ['$sumPips', '$cntClosed'] }, 0] }
-          }}
-        ],
-        byStrategy: [
-          { $group: {
-            _id: '$strategy',
-            signals: { $sum: 1 },
-            wins: { $sum: { $cond: [{ $and: [{ $eq: ['$status', 'closed'] }, { $gt: ['$resultPips', 0] }] }, 1, 0] } },
-            losses:{ $sum: { $cond: [{ $and: [{ $eq: ['$status', 'closed'] }, { $lte: ['$resultPips', 0] }] }, 1, 0] } },
-            netPips: { $sum: { $cond: [{ $eq: ['$status', 'closed'] }, '$resultPips', 0] } }
-          }},
-          { $project: {
-            _id: 0, strategy: '$_id', signals: 1, wins: 1, losses: 1, netPips: 1,
-            winRate: { $cond: [{ $gt: [{ $add: ['$wins', '$losses'] }, 0] }, { $divide: ['$wins', { $add: ['$wins', '$losses'] }] }, 0] }
-          }},
-          { $sort: { netPips: -1 } }
-        ],
-        byInstrument: [
-          { $group: {
-            _id: '$instrumentId',
-            signals: { $sum: 1 },
-            wins: { $sum: { $cond: [{ $and: [{ $eq: ['$status', 'closed'] }, { $gt: ['$resultPips', 0] }] }, 1, 0] } },
-            losses:{ $sum: { $cond: [{ $and: [{ $eq: ['$status', 'closed'] }, { $lte: ['$resultPips', 0] }] }, 1, 0] } },
-            netPips: { $sum: { $cond: [{ $eq: ['$status', 'closed'] }, '$resultPips', 0] } }
-          }},
-          { $project: {
-            _id: 0, instrumentId: '$_id', signals: 1, wins: 1, losses: 1, netPips: 1,
-            winRate: { $cond: [{ $gt: [{ $add: ['$wins', '$losses'] }, 0] }, { $divide: ['$wins', { $add: ['$wins', '$losses'] }] }, 0] }
-          }},
-          { $sort: { instrumentId: 1 } }
-        ]
-      }},
+      {
+        $facet: {
+          counts: [
+            {
+              $group: {
+                _id: null,
+                signals: { $sum: 1 },
+                open: { $sum: { $cond: [{ $eq: ['$status', 'open'] }, 1, 0] } },
+                closed: { $sum: { $cond: [{ $eq: ['$status', 'closed'] }, 1, 0] } },
+                wins: { $sum: { $cond: [{ $and: [{ $eq: ['$status', 'closed'] }, { $gt: ['$resultPips', 0] }] }, 1, 0] } },
+                losses: { $sum: { $cond: [{ $and: [{ $eq: ['$status', 'closed'] }, { $lte: ['$resultPips', 0] }] }, 1, 0] } },
+                netPips: { $sum: { $cond: [{ $eq: ['$status', 'closed'] }, '$resultPips', 0] } },
+                sumPips: { $sum: { $cond: [{ $eq: ['$status', 'closed'] }, '$resultPips', 0] } },
+                cntClosed: { $sum: { $cond: [{ $eq: ['$status', 'closed'] }, 1, 0] } }
+              }
+            },
+            {
+              $project: {
+                _id: 0,
+                signals: 1, open: 1, closed: 1, wins: 1, losses: 1, netPips: 1,
+                winRate: { $cond: [{ $gt: [{ $add: ['$wins', '$losses'] }, 0] }, { $divide: ['$wins', { $add: ['$wins', '$losses'] }] }, 0] },
+                avgPips: { $cond: [{ $gt: ['$cntClosed', 0] }, { $divide: ['$sumPips', '$cntClosed'] }, 0] }
+              }
+            }
+          ],
+          byStrategy: [
+            {
+              $group: {
+                _id: '$strategy',
+                signals: { $sum: 1 },
+                wins: { $sum: { $cond: [{ $and: [{ $eq: ['$status', 'closed'] }, { $gt: ['$resultPips', 0] }] }, 1, 0] } },
+                losses: { $sum: { $cond: [{ $and: [{ $eq: ['$status', 'closed'] }, { $lte: ['$resultPips', 0] }] }, 1, 0] } },
+                netPips: { $sum: { $cond: [{ $eq: ['$status', 'closed'] }, '$resultPips', 0] } }
+              }
+            },
+            {
+              $project: {
+                _id: 0, strategy: '$_id', signals: 1, wins: 1, losses: 1, netPips: 1,
+                winRate: { $cond: [{ $gt: [{ $add: ['$wins', '$losses'] }, 0] }, { $divide: ['$wins', { $add: ['$wins', '$losses'] }] }, 0] }
+              }
+            },
+            { $sort: { netPips: -1 } }
+          ],
+          byInstrument: [
+            {
+              $group: {
+                _id: '$instrumentId',
+                signals: { $sum: 1 },
+                wins: { $sum: { $cond: [{ $and: [{ $eq: ['$status', 'closed'] }, { $gt: ['$resultPips', 0] }] }, 1, 0] } },
+                losses: { $sum: { $cond: [{ $and: [{ $eq: ['$status', 'closed'] }, { $lte: ['$resultPips', 0] }] }, 1, 0] } },
+                netPips: { $sum: { $cond: [{ $eq: ['$status', 'closed'] }, '$resultPips', 0] } }
+              }
+            },
+            {
+              $project: {
+                _id: 0, instrumentId: '$_id', signals: 1, wins: 1, losses: 1, netPips: 1,
+                winRate: { $cond: [{ $gt: [{ $add: ['$wins', '$losses'] }, 0] }, { $divide: ['$wins', { $add: ['$wins', '$losses'] }] }, 0] }
+              }
+            },
+            { $sort: { instrumentId: 1 } }
+          ]
+        }
+      },
       { $project: { totals: { $arrayElemAt: ['$counts', 0] }, byStrategy: 1, byInstrument: 1 } }
     ]).toArray();
 
@@ -301,17 +318,21 @@ app.get('/stats/daily', async (req, res) => {
 
     const rows = await trades.aggregate([
       { $match: match },
-      { $group: {
-        _id: '$entryDateNY',
-        signals: { $sum: 1 },
-        wins: { $sum: { $cond: [{ $and: [{ $eq: ['$status', 'closed'] }, { $gt: ['$resultPips', 0] }] }, 1, 0] } },
-        losses:{ $sum: { $cond: [{ $and: [{ $eq: ['$status', 'closed'] }, { $lte: ['$resultPips', 0] }] }, 1, 0] } },
-        netPips: { $sum: { $cond: [{ $eq: ['$status', 'closed'] }, '$resultPips', 0] } }
-      }},
-      { $project: {
-        _id: 0, dateNY: '$_id', signals: 1, wins: 1, losses: 1, netPips: 1,
-        winRate: { $cond: [{ $gt: [{ $add: ['$wins', '$losses'] }, 0] }, { $divide: ['$wins', { $add: ['$wins', '$losses'] }] }, 0] }
-      }},
+      {
+        $group: {
+          _id: '$entryDateNY',
+          signals: { $sum: 1 },
+          wins: { $sum: { $cond: [{ $and: [{ $eq: ['$status', 'closed'] }, { $gt: ['$resultPips', 0] }] }, 1, 0] } },
+          losses: { $sum: { $cond: [{ $and: [{ $eq: ['$status', 'closed'] }, { $lte: ['$resultPips', 0] }] }, 1, 0] } },
+          netPips: { $sum: { $cond: [{ $eq: ['$status', 'closed'] }, '$resultPips', 0] } }
+        }
+      },
+      {
+        $project: {
+          _id: 0, dateNY: '$_id', signals: 1, wins: 1, losses: 1, netPips: 1,
+          winRate: { $cond: [{ $gt: [{ $add: ['$wins', '$losses'] }, 0] }, { $divide: ['$wins', { $add: ['$wins', '$losses'] }] }, 0] }
+        }
+      },
       { $sort: { dateNY: 1 } }
     ]).toArray();
 
@@ -339,25 +360,25 @@ app.get('/trades', async (req, res) => {
 });
 
 app.post('/debug/send-email', async (_req, res) => {
-try {
-await mailer.sendSignal({
-type: 'strategy_entry',
-strategy: 'TEST',
-instrumentId: 'PING',
-decimals: 2,
-direction: 'buy',
-entry: 123.45,
-sl: 122.45,
-tp: 124.45,
-slPips: 100,
-tpPips: 100,
-sessions: {},
-tsMs: Date.now()
-});
-res.json({ ok: true });
-} catch (e) {
-res.status(500).json({ ok: false, error: e?.message || String(e) });
-}
+  try {
+    await mailer.sendSignal({
+      type: 'strategy_entry',
+      strategy: 'TEST',
+      instrumentId: 'PING',
+      decimals: 2,
+      direction: 'buy',
+      entry: 123.45,
+      sl: 122.45,
+      tp: 124.45,
+      slPips: 100,
+      tpPips: 100,
+      sessions: {},
+      tsMs: Date.now()
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e?.message || String(e) });
+  }
 });
 
 app.get('/debug/smtp-check', async (req, res) => {
@@ -370,7 +391,7 @@ app.get('/debug/smtp-check', async (req, res) => {
   const finish = (ok, err) => {
     if (done) return;
     done = true;
-    try { sock.destroy(); } catch {}
+    try { sock.destroy(); } catch { }
     res.json({ ok, ms: Date.now() - start, host, port, err: err?.message });
   };
 
@@ -434,7 +455,7 @@ async function startBot() {
     const aggregator = new CandleAggregator({
       instrument: inst,
       onM1: (c) => busById.get(inst.id)?.onM1Close(c),
-      onM5: () => {}
+      onM5: () => { }
     });
     aggById.set(inst.id, aggregator);
 
@@ -475,26 +496,26 @@ async function startBot() {
     }
   });
 
-setInterval(() => {
-  const now = Date.now();
-  for (const inst of INSTRUMENTS) {
-    const agg = aggById.get(inst.id);
-    const sessions = agg.getSessions();
-    const lastM1 = agg.getM1().at(-1);
-    const t = live.ticks.get(inst.id);
-    const livePx = t ? t.price : null;
-    const ageSec = t ? Math.round((now - t.tsMs) / 1000) : null;
+  setInterval(() => {
+    const now = Date.now();
+    for (const inst of INSTRUMENTS) {
+      const agg = aggById.get(inst.id);
+      const sessions = agg.getSessions();
+      const lastM1 = agg.getM1().at(-1);
+      const t = live.ticks.get(inst.id);
+      const livePx = t ? t.price : null;
+      const ageSec = t ? Math.round((now - t.tsMs) / 1000) : null;
 
-    console.log(
-      `[bot] ${inst.id}`
-      + ` live=${livePx != null ? livePx.toFixed(inst.decimals) : 'n/a'}`
-      + ` age=${ageSec != null ? ageSec + 's' : 'n/a'}`
-      + ` m1Close=${lastM1 ? lastM1.close.toFixed(inst.decimals) : 'n/a'}`
-      + ` DO=${fmtPx(sessions.dailyOpen, inst.decimals)}`
-      + ` Asia=[${fmtPx(sessions.asiaLo, inst.decimals)}-${fmtPx(sessions.asiaHi, inst.decimals)}]`
-    );
-  }
-}, 60_000);
+      console.log(
+        `[bot] ${inst.id}`
+        + ` live=${livePx != null ? livePx.toFixed(inst.decimals) : 'n/a'}`
+        + ` age=${ageSec != null ? ageSec + 's' : 'n/a'}`
+        + ` m1Close=${lastM1 ? lastM1.close.toFixed(inst.decimals) : 'n/a'}`
+        + ` DO=${fmtPx(sessions.dailyOpen, inst.decimals)}`
+        + ` Asia=[${fmtPx(sessions.asiaLo, inst.decimals)}-${fmtPx(sessions.asiaHi, inst.decimals)}]`
+      );
+    }
+  }, 60_000);
 }
 
 // Start server then bot
@@ -506,6 +527,6 @@ app.listen(HTTP_PORT, async () => {
 // Graceful shutdown
 process.on('SIGINT', async () => {
   console.log('\nShutting down...');
-  try { await client.close(); } catch {}
+  try { await client.close(); } catch { }
   process.exit(0);
 });
