@@ -30,22 +30,23 @@ export class ModelBus {
     this.pdifvg = new PrevDayIFVG({ decimals: instrument.decimals, pipSize: instrument.pipSize, touchPips: 3 });
     this.nyRangeOB = new NyRangeOB({ decimals: instrument.decimals, pipSize: instrument.pipSize });
 
-    this.candleRange = new CandleRangeEntry({
-      decimals: instrument.decimals,
-      pipSize: instrument.pipSize,
-      startHourNY: 8.5,   // 08:30
-      endHourNY: 11,
-      useAsia: true,
-      usePrevDay: true,
-      useDO: true,
-      dispAtrMult: 1.2,
-      minBodyPips: 0,
-      expiryMin: 60,
-      levels: ['fvgMid', 'ob50', 'body50', 'range50', 'obOpen'],
-      touchPips: 1,
-      oneTradePerDay: true
-    });
-
+        this.candleRange = new CandleRangeEntry({
+          decimals: instrument.decimals,
+          pipSize: instrument.pipSize,
+          startHourNY: 8.5,   // 08:30 NY
+          endHourNY: 11,
+          useAsia: true,
+          usePrevDay: true,
+          useDO: true,
+          dispAtrMult: 1.2,
+          minBodyPips: 0,
+          expiryMin: 60,
+          levels: ['fvgMid', 'ob50', 'body50', 'range50', 'obOpen'],
+          touchPips: 1,
+          oneTradePerDay: false,   // allow many per day
+          multiPerSetup: true,     // allow multiple signals from one displacement
+          minCooldownMs: 500       // debounce
+        });
         this.orb = new ORB({
       decimals: instrument.decimals,
       pipSize: instrument.pipSize,
