@@ -43,7 +43,7 @@ export class FinnhubWS {
 
     this._closedByClient = false;
     const url = this._url();
-    this.log(`Connecting ${url} ...`);
+    this.log(`Connecting ...`);
     this.ws = new WebSocket(url);
 
     this.ws.on('open', () => {
