@@ -18,6 +18,7 @@ import { nowNY, nyDayKey } from './src/utils/time.js';
 import { fmtPx } from './src/utils/format.js';
 import { loadAsiaSnapshot } from './src/utils/persist.js';
 import { INSTRUMENTS } from './src/config/instruments.js';
+import { PropFirmManager } from './src/core/propFirmManager.js';
 
 // ====== ENV ======
 const HTTP_PORT = Number(process.env.PORT || process.env.HTTP_PORT || 8080);
@@ -80,6 +81,10 @@ await client.connect();
 const db = client.db(DB_NAME);
 const trades = db.collection(TRADES_COLL);
 
+// Prop firm manager setup
+const propFirmManager = new PropFirmManager({ db });
+await propFirmManager.init();
+
 // Indexes
 await trades.createIndex({ entryTs: -1 });
 await trades.createIndex({ entryDateNY: 1 });
@@ -141,6 +146,34 @@ app.post('/_internal/strategy_entry', async (req, res) => {
     const tradeId = `${b.instrumentId}-${b.strategy}-${b.entryTs}`;
     const entryTsMs = Number(b.entryTs);
     const nowMs = Date.now();
+    const entryDateNY = dateNY(entryTsMs);
+
+    // Double check single entry cap per strategy per day
+    const existing = await trades.findOne({
+      instrumentId: b.instrumentId,
+      strategy: b.strategy,
+      entryDateNY: entryDateNY
+    });
+    if (existing) {
+      return res.status(400).json({ error: `Already have an entry for strategy ${b.strategy} today.` });
+    }
+
+    const lots = b.lots != null ? Number(b.lots) : 2.0;
+
+    // Validate and record with prop firm manager
+    try {
+      await propFirmManager.onTradeOpen({
+        instrumentId: b.instrumentId,
+        strategy: b.strategy,
+        direction: b.direction,
+        entryPrice: Number(b.entry),
+        entryTs: entryTsMs,
+        slPips: b.slPips,
+        lots
+      });
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
+    }
 
     const baseDoc = {
       _id: tradeId,
@@ -149,7 +182,7 @@ app.post('/_internal/strategy_entry', async (req, res) => {
       direction: b.direction,
       entryTs: entryTsMs,
       entryTsNY: fmtNY(entryTsMs),
-      entryDateNY: dateNY(entryTsMs),
+      entryDateNY: entryDateNY,
       entryPrice: Number(b.entry),
       slPrice: b.sl != null ? Number(b.sl) : null,
       tpPrice: b.tp != null ? Number(b.tp) : null,
@@ -159,11 +192,13 @@ app.post('/_internal/strategy_entry', async (req, res) => {
       decimals: b.decimals != null ? Number(b.decimals) : 5,
       variantLabel: b.variantLabel || null,
       status: 'open',
+      lots,
       exitTs: null,
       exitTsNY: null,
       exitPrice: null,
       exitReason: null,
       resultPips: null,
+      pnl: null,
       timeToCloseMin: null,
       session: sessionLabel(entryTsMs),
       context: {
@@ -209,6 +244,14 @@ app.post('/_internal/result', async (req, res) => {
     const exitReason = b.outcome === 'profit' ? 'tp' : b.outcome === 'loss' ? 'sl' : 'manual';
     const timeToCloseMin = Math.max(0, Math.round((exitTsMs - (doc.entryTs || exitTsMs)) / 60000));
 
+    const tradeLots = doc.lots != null ? Number(doc.lots) : 2.0;
+    const pnl = resultPips != null ? resultPips * tradeLots * 10 : 0;
+
+    // Update with prop firm manager
+    if (resultPips != null) {
+      await propFirmManager.onTradeClose(tradeId, exitReason, resultPips, tradeLots);
+    }
+
     await trades.updateOne(
       { _id: tradeId },
       {
@@ -219,6 +262,7 @@ app.post('/_internal/result', async (req, res) => {
           exitPrice: Number(b.exit),
           exitReason,
           resultPips,
+          pnl,
           timeToCloseMin,
           updatedAt: Date.now(),
           variantLabel: b.variant || doc.variantLabel || null
@@ -229,6 +273,35 @@ app.post('/_internal/result', async (req, res) => {
     res.json({ ok: true, tradeId });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Prop Firm API endpoints
+app.get('/api/prop-firm/account', async (_req, res) => {
+  try {
+    const acc = propFirmManager.getAccount();
+    res.json(acc);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/prop-firm/reset', async (req, res) => {
+  try {
+    const { firm, initialBalance, riskType, riskPercent, fixedLots, phase } = req.body || {};
+    await propFirmManager.resetAccount(firm, initialBalance, riskType, riskPercent, fixedLots, phase);
+    res.json({ ok: true, account: propFirmManager.getAccount() });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/prop-firm/payout', async (_req, res) => {
+  try {
+    const payoutRecord = await propFirmManager.requestPayout();
+    res.json({ ok: true, payout: payoutRecord, account: propFirmManager.getAccount() });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
   }
 });
 
@@ -464,6 +537,8 @@ async function startBot() {
       aggregator,
       notifier: mailer,
       monitor,
+      propFirmManager,
+      tradesCollection: trades,
       log: (line) => console.log(`[${nowNY().toFormat('yyyy-LL-dd HH:mm:ss')} NY] ${line}`)
     });
     busById.set(inst.id, bus);
@@ -493,6 +568,15 @@ async function startBot() {
       aggById.get(inst.id)?.ingestTick(price, tsMs);
       busById.get(inst.id)?.onTick(price, tsMs);
       monitor.onTick(inst.id, price, tsMs);
+
+      // Trigger prop firm calculations on each tick
+      const priceMap = new Map();
+      for (const [id, tick] of live.ticks.entries()) {
+        priceMap.set(id, tick.price);
+      }
+      propFirmManager.onTick(priceMap, monitor.trades).catch(err => {
+        console.error('[PropFirmManager] Tick update error:', err);
+      });
     }
   });
 

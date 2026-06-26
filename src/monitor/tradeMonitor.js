@@ -48,6 +48,7 @@ export class TradeMonitor {
       tsMs: exitTs,
       entryTs: t.entryTs,
       sessions: t.sessions,
+      lots: t.lots,
       meta: { cause: t.cause, models: t.models, score: t.score }
     }).catch((e) => console.error('[mail] send error:', e?.message || e));
 
@@ -61,7 +62,8 @@ export class TradeMonitor {
       exitTs,
       outcome,
       pips,
-      variant: t.variantLabel || 'FixedPips'
+      variant: t.variantLabel || 'FixedPips',
+      lots: t.lots
     });
   }
 

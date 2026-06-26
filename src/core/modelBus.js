@@ -1,4 +1,5 @@
 // src/core/modelBus.js
+import { DateTime } from 'luxon';
 import { fmtPx } from '../utils/format.js';
 import { PO3 } from '../strategies/po3.js';
 import { msToNY, nyDayKey } from '../utils/time.js';
@@ -15,13 +16,18 @@ import { ORB } from '../strategies/orb.js';
 import { GoldTimeStrategy } from '../strategies/goldTime.js';
 
 export class ModelBus {
-  constructor({ instrument, aggregator, log, notifier, monitor }) {
+  constructor({ instrument, aggregator, log, notifier, monitor, propFirmManager, tradesCollection }) {
     this.instrument = instrument;
     this.aggregator = aggregator;
     this.log = log || console.log;
     this.notifier = notifier;
     this.monitor = monitor;
+    this.propFirmManager = propFirmManager;
+    this.tradesCollection = tradesCollection;
     this._asiaSavedForKey = null;
+    
+    this.enteredStrategiesToday = new Set();
+    this.initEnteredStrategies();
 
     this.po3 = new PO3({ decimals: instrument.decimals, pipSize: instrument.pipSize, asset: 'fx' });
     this.fvgc = new FVGContinuation({ decimals: instrument.decimals, pipSize: instrument.pipSize });
@@ -76,6 +82,27 @@ export class ModelBus {
     this.lastPrice = null;
   }
 
+  async initEnteredStrategies() {
+    if (!this.tradesCollection) return;
+    try {
+      const todayStr = DateTime.now().setZone('America/New_York').toFormat('yyyy-LL-dd');
+      const docs = await this.tradesCollection.find({
+        instrumentId: this.instrument.id,
+        entryDateNY: todayStr
+      }).toArray();
+      for (const doc of docs) {
+        if (doc.strategy) {
+          this.enteredStrategiesToday.add(doc.strategy);
+        }
+      }
+      if (this.enteredStrategiesToday.size > 0) {
+        this._log(`Loaded entered strategies for today: ${Array.from(this.enteredStrategiesToday).join(', ')}`);
+      }
+    } catch (e) {
+      console.error(`[ModelBus] Error initializing entered strategies for ${this.instrument.id}:`, e);
+    }
+  }
+
   // Per-instrument TP/SL pips
   _getRR() {
     const id = this.instrument?.id || '';
@@ -96,6 +123,7 @@ export class ModelBus {
       this.candleRange.resetDay?.();
       this.orb.resetDay?.();
       this.goldTime?.resetDay?.();
+      this.enteredStrategiesToday.clear();
       this.lastDayKey = dKey;
       this._log(`New NY day. Prev H/L: ${fmtPx(sessions.prevDayHigh, this.instrument.decimals)} / ${fmtPx(sessions.prevDayLow, this.instrument.decimals)}`);
     }
@@ -125,9 +153,29 @@ export class ModelBus {
     const rr = this._getRR();
     const variant = `TP${rr.tpPips}/SL${rr.slPips}`;
 
+    // Skip trade entries if prop firm account has failed
+    if (this.propFirmManager) {
+      const acc = this.propFirmManager.getAccount();
+      if (acc && acc.failed) {
+        return;
+      }
+    }
+
     const handleEntry = async (strategyName, direction, entryPx, slPx, tpPx, entryTs) => {
+      // Enforce only one entry per strategy per day
+      if (this.enteredStrategiesToday.has(strategyName)) {
+        return;
+      }
+      this.enteredStrategiesToday.add(strategyName);
+
+      // Calculate lots
+      let lots = 2.0;
+      if (this.propFirmManager) {
+        lots = this.propFirmManager.calculateLots(this.instrument.id, rr.slPips);
+      }
+
       const tid = `${this.instrument.id}-${strategyName}-${entryTs}`;
-      this._log(`${strategyName} ENTRY ${direction.toUpperCase()} @ ${entryPx.toFixed(this.instrument.decimals)} SL ${slPx.toFixed(this.instrument.decimals)} TP ${tpPx.toFixed(this.instrument.decimals)} (${variant}) id=${tid}`);
+      this._log(`${strategyName} ENTRY ${direction.toUpperCase()} @ ${entryPx.toFixed(this.instrument.decimals)} SL ${slPx.toFixed(this.instrument.decimals)} TP ${tpPx.toFixed(this.instrument.decimals)} (${variant}) id=${tid} lots=${lots}`);
 
       // Email
       this.notifier?.sendSignal({
@@ -142,7 +190,8 @@ export class ModelBus {
         slPips: rr.slPips,
         tpPips: rr.tpPips,
         sessions,
-        tsMs: entryTs
+        tsMs: entryTs,
+        lots
       }).catch((e) => console.error('[mail] send error:', e?.message || e));
 
       // Monitor
@@ -159,7 +208,8 @@ export class ModelBus {
         variantLabel: variant,
         sessions,
         models: [strategyName],
-        score: 0
+        score: 0,
+        lots
       });
 
       // Dashboard
@@ -178,7 +228,8 @@ export class ModelBus {
         sessions,
         models: [strategyName],
         score: 0,
-        variantLabel: variant
+        variantLabel: variant,
+        lots
       }).catch((e) => console.error('[Dashboard] post error:', e?.message || e));
     };
 
