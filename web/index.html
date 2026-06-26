@@ -39,6 +39,86 @@
   </header>
 
   <main class="container">
+    <!-- Prop Firm compliance panel -->
+    <section class="card prop-firm-panel" style="margin-bottom: 20px;">
+      <div class="prop-firm-header">
+        <div class="prop-firm-title-group">
+          <span class="prop-firm-label">PROP CHALLENGE MONITOR</span>
+          <h2 id="propFirmTitle" class="prop-firm-title">Goat Funded Trader • Phase 1</h2>
+        </div>
+        <div class="prop-firm-status-group">
+          <span id="propFirmStatusBadge" class="status-badge badge active">ACTIVE</span>
+          <button id="payoutBtn" class="btn" style="display:none; margin-left: 10px;">Request Payout</button>
+          <button id="settingsBtn" class="btn primary" style="margin-left: 10px;">Configure Challenge</button>
+        </div>
+      </div>
+      
+      <div class="prop-firm-metrics">
+        <!-- Balance / Equity -->
+        <div class="metric-card">
+          <div class="metric-label">Balance / Equity</div>
+          <div class="metric-value-row">
+            <span id="propBalance" class="metric-value">$100,000</span>
+            <span class="metric-sep">/</span>
+            <span id="propEquity" class="metric-value secondary">$100,000</span>
+          </div>
+          <div class="metric-desc">Initial: <span id="propInitial">$100,000</span></div>
+        </div>
+
+        <!-- Daily Drawdown -->
+        <div class="metric-card">
+          <div class="metric-label">Daily Drawdown (Max 5%)</div>
+          <div class="metric-value-row">
+            <span id="propDailyDrawdown" class="metric-value">0.00%</span>
+            <span class="metric-limit">/ $5,000.00</span>
+          </div>
+          <div class="progress-container">
+            <div id="propDailyProgress" class="progress-bar" style="width: 0%"></div>
+          </div>
+          <div class="metric-desc">Watermark: <span id="propWatermark">$100,000.00</span></div>
+        </div>
+
+        <!-- Overall Drawdown -->
+        <div class="metric-card">
+          <div class="metric-label">Max Overall Drawdown (Static 10%)</div>
+          <div class="metric-value-row">
+            <span id="propOverallDrawdown" class="metric-value">0.00%</span>
+            <span class="metric-limit">/ $10,000.00</span>
+          </div>
+          <div class="progress-container">
+            <div id="propOverallProgress" class="progress-bar" style="width: 0%"></div>
+          </div>
+          <div class="metric-desc">Failure limit: <span id="propMinEquity">$90,000.00</span></div>
+        </div>
+
+        <!-- Profit Target -->
+        <div class="metric-card">
+          <div class="metric-label">Profit Target</div>
+          <div class="metric-value-row">
+            <span id="propProfitProgress" class="metric-value">$0.00</span>
+            <span class="metric-limit" id="propProfitLimit">/ $10,000.00</span>
+          </div>
+          <div class="progress-container">
+            <div id="propProfitProgressBar" class="progress-bar success" style="width: 0%"></div>
+          </div>
+          <div class="metric-desc">Progress: <span id="propProfitPct">0.0%</span></div>
+        </div>
+
+        <!-- Trading Days -->
+        <div class="metric-card">
+          <div class="metric-label">Trading Days</div>
+          <div class="metric-value-row">
+            <span id="propDays" class="metric-value">0</span>
+            <span class="metric-limit">/ 3 days</span>
+          </div>
+          <div class="progress-container">
+            <div id="propDaysProgress" class="progress-bar info" style="width: 0%"></div>
+          </div>
+          <div class="metric-desc" id="propDaysList" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">No days traded yet</div>
+        </div>
+      </div>
+    </section>
+
     <section class="kpis">
       <div class="card kpi">
         <div class="kpi-label">Signals</div>
@@ -138,12 +218,14 @@
               <th>Instrument</th>
               <th>Strategy</th>
               <th>Dir</th>
+              <th>Lots</th>
               <th>Entry</th>
               <th>SL</th>
               <th>TP</th>
               <th>Status</th>
               <th>Exit</th>
               <th>Result (pips)</th>
+              <th>PnL ($)</th>
               <th>Duration</th>
             </tr>
           </thead>
@@ -164,6 +246,61 @@
   </div>
 
   <footer class="footer">© Your Trading Bot</footer>
+
+  <!-- Settings Modal -->
+  <div id="settingsModal" class="modal hidden">
+    <div class="modal-content card">
+      <div class="modal-header">
+        <h3 style="font-size: 16px; font-weight: 700; margin: 0;">Configure Challenge</h3>
+        <button id="modalClose" class="btn ghost" style="padding: 2px 8px;">✕</button>
+      </div>
+      <form id="settingsForm" style="margin-top: 12px;">
+        <div class="form-group">
+          <label>Prop Firm</label>
+          <select id="firmSelect">
+            <option value="goat">Goat Funded Trader (2-Step Standard)</option>
+            <option value="fundingpips">FundingPips (2-Step Standard)</option>
+          </select>
+        </div>
+        
+        <div class="form-group">
+          <label>Phase</label>
+          <select id="phaseSelect">
+            <option value="phase1">Phase 1 Evaluation</option>
+            <option value="phase2">Phase 2 Evaluation</option>
+            <option value="funded">Funded Account</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Initial Balance ($)</label>
+          <input type="number" id="balanceInput" value="100000" min="1000" step="1000" />
+        </div>
+
+        <div class="form-group">
+          <label>Position Sizing Mode</label>
+          <select id="riskTypeSelect">
+            <option value="fixed_percent">Risk % per Trade</option>
+            <option value="fixed_lots">Fixed Lot Size</option>
+          </select>
+        </div>
+
+        <div class="form-group" id="riskPercentGroup">
+          <label>Risk % per Trade</label>
+          <input type="number" id="riskPercentInput" value="1.0" min="0.1" max="10" step="0.1" />
+        </div>
+
+        <div class="form-group" id="fixedLotsGroup" style="display: none;">
+          <label>Fixed Lots</label>
+          <input type="number" id="fixedLotsInput" value="2.0" min="0.01" max="100" step="0.1" />
+        </div>
+
+        <div class="form-actions" style="margin-top: 20px;">
+          <button type="submit" class="btn primary" style="width: 100%; padding: 10px;">Reset & Apply Challenge</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <script src="./app.js"></script>
 </body>
