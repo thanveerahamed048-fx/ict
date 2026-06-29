@@ -80,6 +80,16 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui
   padding-bottom: 12px;
   margin-bottom: 14px;
 }
+.prop-firm-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.prop-firm-status-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .prop-firm-title {
   margin: 4px 0 0 0;
   font-size: 18px;

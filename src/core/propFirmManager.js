@@ -74,20 +74,30 @@ export class PropFirmManager {
 
   async resetAccount(firm, initialBalance, riskType, riskPercent, fixedLots, phase) {
     const defaultAcc = this._getDefaultAccount();
+    // Use nullish coalescing (??) so that valid falsy numbers (e.g. 0.5 risk%) are not
+    // accidentally replaced by the default.
+    const parsedBalance  = Number(initialBalance);
+    const parsedRisk     = Number(riskPercent);
+    const parsedLots     = Number(fixedLots);
+
+    const safeBalance = (isFinite(parsedBalance) && parsedBalance > 0) ? parsedBalance : defaultAcc.initialBalance;
+    const safeRisk    = isFinite(parsedRisk)  ? parsedRisk  : defaultAcc.riskPercent;
+    const safeLots    = (isFinite(parsedLots) && parsedLots > 0) ? parsedLots : defaultAcc.fixedLots;
+
     this.account = {
       ...defaultAcc,
-      firm: firm || defaultAcc.firm,
-      phase: phase || defaultAcc.phase,
-      initialBalance: Number(initialBalance) || defaultAcc.initialBalance,
-      balance: Number(initialBalance) || defaultAcc.initialBalance,
-      equity: Number(initialBalance) || defaultAcc.initialBalance,
-      highWatermark: Number(initialBalance) || defaultAcc.initialBalance,
-      riskType: riskType || defaultAcc.riskType,
-      riskPercent: Number(riskPercent) || defaultAcc.riskPercent,
-      fixedLots: Number(fixedLots) || defaultAcc.fixedLots,
+      firm:           firm     || defaultAcc.firm,
+      phase:          phase    || defaultAcc.phase,
+      initialBalance: safeBalance,
+      balance:        safeBalance,
+      equity:         safeBalance,
+      highWatermark:  safeBalance,
+      riskType:       riskType || defaultAcc.riskType,
+      riskPercent:    safeRisk,
+      fixedLots:      safeLots,
     };
     await this.save();
-    console.log(`[PropFirmManager] Account reset. Balance: $${this.account.balance.toFixed(2)}, Firm: ${this.account.firm}`);
+    console.log(`[PropFirmManager] Account reset. Balance: $${this.account.balance.toFixed(2)}, Firm: ${this.account.firm}, Phase: ${this.account.phase}`);
   }
 
   calculateLots(instrumentId, slPips) {

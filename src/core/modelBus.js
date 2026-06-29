@@ -95,9 +95,7 @@ export class ModelBus {
           this.enteredStrategiesToday.add(doc.strategy);
         }
       }
-      if (this.enteredStrategiesToday.size > 0) {
-        this._log(`Loaded entered strategies for today: ${Array.from(this.enteredStrategiesToday).join(', ')}`);
-      }
+
     } catch (e) {
       console.error(`[ModelBus] Error initializing entered strategies for ${this.instrument.id}:`, e);
     }

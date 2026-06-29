@@ -430,6 +430,9 @@ riskTypeSelect.addEventListener('change', () => {
 
 // Configure Challenge Modal events
 settingsBtn.addEventListener('click', async () => {
+  // Open modal instantly so the click is immediately responsive
+  settingsModal.classList.remove('hidden');
+
   try {
     const acc = await fetchJSON('/api/prop-firm/account');
     firmSelect.value = acc.firm || 'goat';
@@ -441,7 +444,6 @@ settingsBtn.addEventListener('click', async () => {
 
     // Trigger update
     riskTypeSelect.dispatchEvent(new Event('change'));
-    settingsModal.classList.remove('hidden');
   } catch (e) {
     console.error('Error fetching challenge state:', e);
   }
@@ -453,6 +455,10 @@ modalClose.addEventListener('click', () => {
 
 settingsForm.addEventListener('submit', async (e) => {
   e.preventDefault();
+  const submitBtn = settingsForm.querySelector('button[type="submit"]');
+  const originalText = submitBtn.textContent;
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Applying...';
   try {
     const payload = {
       firm: firmSelect.value,
@@ -469,12 +475,18 @@ settingsForm.addEventListener('submit', async (e) => {
       body: JSON.stringify(payload)
     });
     if (!res.ok) {
-      throw new Error(await res.text());
+      let msg = `Server error ${res.status}`;
+      try { const j = await res.json(); msg = j.error || msg; } catch { msg = await res.text() || msg; }
+      throw new Error(msg);
     }
     settingsModal.classList.add('hidden');
     await Promise.all([loadSummary(), loadDaily(), loadTrades(), loadPropFirmStatus()]);
   } catch (err) {
-    alert('Failed to reset challenge: ' + err.message);
+    alert('Failed to reset challenge: ' + (err.message || 'Unknown error. Check the console.'));
+    console.error('[reset]', err);
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = originalText;
   }
 });
 

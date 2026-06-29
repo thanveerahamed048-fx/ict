@@ -179,6 +179,14 @@ app.get('/stats/summary', async (_req, res) => {
             }}
           ],
           byStrategy: [
+            {
+              $match: {
+                strategy: {
+                  $exists: true,
+                  $not: /AUDIT|TEST|PHASE/i
+                }
+              }
+            },
             { $group: {
               _id: '$strategy',
               signals: { $sum: 1 },
@@ -249,7 +257,7 @@ app.get('/stats/daily', async (req, res) => {
 app.get('/trades', async (req, res) => {
   try {
     const { instrumentId, strategy, status, date, limit = 50 } = req.query;
-    const q = {};
+    const q = { strategy: { $not: /AUDIT|TEST|PHASE/i } };
     if (instrumentId) q.instrumentId = instrumentId;
     if (strategy) q.strategy = strategy;
     if (status) q.status = status;
