@@ -20,6 +20,8 @@ export async function saveAsiaSnapshot(instrumentId, dayKey, sessions) {
     asiaDone: sessions.asiaDone ?? false,
     prevDayHigh: sessions.prevDayHigh ?? null,
     prevDayLow: sessions.prevDayLow ?? null,
+    prevDayOpen: sessions.prevDayOpen ?? null,   // fix #7
+    prevDayClose: sessions.prevDayClose ?? null, // fix #7
     todayHigh: sessions.todayHigh ?? null,
     todayLow: sessions.todayLow ?? null,
     savedAt: Date.now()

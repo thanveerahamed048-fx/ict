@@ -90,4 +90,9 @@ export class BreakerReversal {
     this.pending = null;
     return { direction: dir, entry, stop, targets, strategy: 'BREAKER' };
   }
+
+  resetDay() {
+    this.pending = null;
+    this.lastBreakKey = null;
+  }
 }

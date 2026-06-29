@@ -1,5 +1,7 @@
 // web/strategies.js
-const DASHBOARD_BASE = 'https://ict-4oov.onrender.com';
+const DASHBOARD_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.port !== ''
+  ? window.location.origin
+  : 'https://ict-4oov.onrender.com';
 
 const statsBody = document.getElementById('statsBody');
 const refreshBtn = document.getElementById('refreshBtn');

@@ -10,12 +10,6 @@ export const DASHBOARD_URL =
 
 /**
  * Post a new strategy entry (open trade) to the dashboard.
- * Expected payload shape:
- * {
- *   instrumentId, strategy, direction, entry, entryTs,
- *   sl, tp, pipSize, decimals, tpPips, slPips,
- *   sessions, models, score, variantLabel
- * }
  */
 export async function postStrategyEntry(payload) {
   try {
@@ -34,12 +28,7 @@ export async function postStrategyEntry(payload) {
 }
 
 /**
- * Post a trade result (close) to the dashboard.
- * Expected payload shape:
- * {
- *   instrumentId, strategy, entryTs, direction,
- *   exit, exitTs, outcome, pips, variant
- * }
+ * Post a trade result (full close) to the dashboard.
  */
 export async function postResult(payload) {
   try {
@@ -54,5 +43,46 @@ export async function postResult(payload) {
     }
   } catch (e) {
     console.warn('dashboard result error:', e.message);
+  }
+}
+
+/**
+ * Notify the dashboard of a partial close (scale-out).
+ * Payload: { instrumentId, strategy, entryTs, exitPrice, exitTs,
+ *            partialPips, partialLots, remainingLots, slEvents }
+ */
+export async function postPartialClose(payload) {
+  try {
+    const res = await fetch(`${DASHBOARD_URL}/_internal/partial_close`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      const msg = await res.text();
+      console.warn('dashboard partial_close failed:', res.status, msg);
+    }
+  } catch (e) {
+    console.warn('dashboard partial_close error:', e.message);
+  }
+}
+
+/**
+ * Notify the dashboard that a trade's SL was moved (e.g. break-even).
+ * Payload: { instrumentId, strategy, entryTs, newSl, slEvents }
+ */
+export async function postSlUpdate(payload) {
+  try {
+    const res = await fetch(`${DASHBOARD_URL}/_internal/sl_update`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      const msg = await res.text();
+      console.warn('dashboard sl_update failed:', res.status, msg);
+    }
+  } catch (e) {
+    console.warn('dashboard sl_update error:', e.message);
   }
 }

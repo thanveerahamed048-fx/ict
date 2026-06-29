@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-      "start": "node app.js"
+    "start": "node app.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -12,6 +12,7 @@
     "luxon": "^3.4.4",
     "mongodb": "^6.20.0",
     "nodemailer": "^7.0.10",
+    "proxy-agent": "^8.0.2",
     "ws": "^8.18.0"
   }
 }

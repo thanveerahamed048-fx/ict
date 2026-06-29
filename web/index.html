@@ -38,6 +38,14 @@
     </div>
   </header>
 
+  <div id="tickerStrip" class="ticker-strip">
+    <span class="ticker-label">LIVE</span>
+    <div id="tickerItems" class="ticker-items">
+      <span class="ticker-placeholder">Connecting…</span>
+    </div>
+    <span id="wsStatus" class="ws-dot disconnected" title="Feed disconnected"></span>
+  </div>
+
   <main class="container">
     <!-- Prop Firm compliance panel -->
     <section class="card prop-firm-panel" style="margin-bottom: 20px;">
@@ -177,6 +185,10 @@
               <label><input type="checkbox" class="strategyChk" value="prevDayIFVG" checked /> prevDayIFVG</label>
               <label><input type="checkbox" class="strategyChk" value="ORB" checked /> ORB</label>
               <label><input type="checkbox" class="strategyChk" value="GoldTime" checked /> Gold</label>
+              <label style="margin-top:6px;color:#A9B4C0;font-size:11px;width:100%;">— Crypto —</label>
+              <label><input type="checkbox" class="strategyChk" value="BTCUSDT-ORB" checked /> BTC ORB</label>
+              <label><input type="checkbox" class="strategyChk" value="ETHUSDT-ORB" checked /> ETH ORB</label>
+              <label><input type="checkbox" class="strategyChk" value="SOLUSDT-ORB" checked /> SOL ORB</label>
             </div>
           </div>
           <div class="filter-group">

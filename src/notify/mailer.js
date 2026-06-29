@@ -112,6 +112,147 @@ export class Mailer {
     }
   }
 
+  async sendDailySummary({ dateNY, trades, account }) {
+    if (!this.enabled || !this.to.length) {
+      console.warn('[mailer] daily summary skipped (disabled or no recipients)');
+      return;
+    }
+
+    const closed = trades.filter(t => t.status === 'closed');
+    const wins   = closed.filter(t => (t.resultPips ?? 0) > 0);
+    const losses = closed.filter(t => (t.resultPips ?? 0) <= 0);
+    const netPips = closed.reduce((s, t) => s + (t.resultPips ?? 0), 0);
+    const netPnl  = closed.reduce((s, t) => s + (t.pnl ?? 0), 0);
+    const winRate = closed.length > 0 ? ((wins.length / closed.length) * 100).toFixed(1) : '0.0';
+
+    // Per-strategy breakdown
+    const byStrategy = {};
+    for (const t of closed) {
+      const s = t.strategy || 'Unknown';
+      if (!byStrategy[s]) byStrategy[s] = { wins: 0, losses: 0, pips: 0 };
+      if ((t.resultPips ?? 0) > 0) byStrategy[s].wins++;
+      else byStrategy[s].losses++;
+      byStrategy[s].pips += t.resultPips ?? 0;
+    }
+
+    const fmtPips = p => (p >= 0 ? '+' : '') + p.toFixed(1);
+    const fmtUsd  = n => (n >= 0 ? '+$' : '-$') + Math.abs(n).toFixed(2);
+
+    // Strategy rows for HTML
+    const stratRows = Object.entries(byStrategy)
+      .sort((a, b) => b[1].pips - a[1].pips)
+      .map(([name, s]) => `
+        <tr>
+          <td style="padding:5px 10px;">${name}</td>
+          <td style="padding:5px 10px;text-align:center;">${s.wins + s.losses}</td>
+          <td style="padding:5px 10px;text-align:center;color:#22C55E;">${s.wins}</td>
+          <td style="padding:5px 10px;text-align:center;color:#EF4444;">${s.losses}</td>
+          <td style="padding:5px 10px;text-align:right;color:${s.pips >= 0 ? '#22C55E' : '#EF4444'};">${fmtPips(s.pips)}</td>
+        </tr>`).join('');
+
+    // Prop firm section
+    const acc = account || {};
+    const phase = acc.phase === 'phase1' ? 'Phase 1' : acc.phase === 'phase2' ? 'Phase 2' : acc.phase === 'funded' ? 'FUNDED' : acc.phase || '—';
+    const firm  = acc.firm === 'goat' ? 'Goat Funded Trader' : acc.firm === 'fundingpips' ? 'FundingPips' : acc.firm || '—';
+    const ddPct = acc.highWatermark > 0 ? (((acc.highWatermark - acc.equity) / acc.highWatermark) * 100).toFixed(2) : '0.00';
+    const profitPct = acc.initialBalance > 0 ? (((acc.balance - acc.initialBalance) / acc.initialBalance) * 100).toFixed(2) : '0.00';
+
+    const subject = `Daily Summary ${dateNY} — ${closed.length} trades | ${fmtPips(netPips)} pips | Win ${winRate}%`;
+
+    const html = `
+<div style="font-family:Arial,sans-serif;color:#E6EDF3;max-width:600px;background:#0B0F13;padding:16px;border-radius:8px;">
+  <div style="font-size:18px;font-weight:700;margin-bottom:4px;">📊 Daily Trading Summary</div>
+  <div style="font-size:13px;color:#A9B4C0;margin-bottom:16px;">${dateNY} (New York)</div>
+
+  <!-- KPIs -->
+  <table style="width:100%;border-collapse:collapse;background:#121820;border:1px solid #25303A;border-radius:8px;margin-bottom:16px;">
+    <tr>
+      <td style="padding:12px;text-align:center;border-right:1px solid #25303A;">
+        <div style="font-size:22px;font-weight:700;">${closed.length}</div>
+        <div style="font-size:11px;color:#A9B4C0;">Trades</div>
+      </td>
+      <td style="padding:12px;text-align:center;border-right:1px solid #25303A;">
+        <div style="font-size:22px;font-weight:700;color:#22C55E;">${wins.length}</div>
+        <div style="font-size:11px;color:#A9B4C0;">Wins</div>
+      </td>
+      <td style="padding:12px;text-align:center;border-right:1px solid #25303A;">
+        <div style="font-size:22px;font-weight:700;color:#EF4444;">${losses.length}</div>
+        <div style="font-size:11px;color:#A9B4C0;">Losses</div>
+      </td>
+      <td style="padding:12px;text-align:center;border-right:1px solid #25303A;">
+        <div style="font-size:22px;font-weight:700;">${winRate}%</div>
+        <div style="font-size:11px;color:#A9B4C0;">Win Rate</div>
+      </td>
+      <td style="padding:12px;text-align:center;border-right:1px solid #25303A;">
+        <div style="font-size:22px;font-weight:700;color:${netPips >= 0 ? '#22C55E' : '#EF4444'};">${fmtPips(netPips)}</div>
+        <div style="font-size:11px;color:#A9B4C0;">Net Pips</div>
+      </td>
+      <td style="padding:12px;text-align:center;">
+        <div style="font-size:22px;font-weight:700;color:${netPnl >= 0 ? '#22C55E' : '#EF4444'};">${fmtUsd(netPnl)}</div>
+        <div style="font-size:11px;color:#A9B4C0;">Net PnL</div>
+      </td>
+    </tr>
+  </table>
+
+  <!-- Strategy breakdown -->
+  ${stratRows ? `
+  <div style="font-size:13px;font-weight:700;color:#A9B4C0;margin-bottom:6px;">BY STRATEGY</div>
+  <table style="width:100%;border-collapse:collapse;background:#121820;border:1px solid #25303A;border-radius:8px;margin-bottom:16px;font-size:13px;">
+    <thead>
+      <tr style="color:#A9B4C0;border-bottom:1px solid #25303A;">
+        <th style="padding:6px 10px;text-align:left;">Strategy</th>
+        <th style="padding:6px 10px;text-align:center;">Trades</th>
+        <th style="padding:6px 10px;text-align:center;">W</th>
+        <th style="padding:6px 10px;text-align:center;">L</th>
+        <th style="padding:6px 10px;text-align:right;">Pips</th>
+      </tr>
+    </thead>
+    <tbody>${stratRows}</tbody>
+  </table>` : ''}
+
+  <!-- Prop firm standing -->
+  <div style="font-size:13px;font-weight:700;color:#A9B4C0;margin-bottom:6px;">PROP CHALLENGE STANDING</div>
+  <table style="width:100%;border-collapse:collapse;background:#121820;border:1px solid #25303A;border-radius:8px;font-size:13px;">
+    <tr><td style="padding:6px 10px;color:#A9B4C0;">Firm / Phase</td><td style="padding:6px 10px;">${firm} — ${phase}${acc.failed ? ' <span style="color:#EF4444;">⚠ FAILED</span>' : ''}</td></tr>
+    <tr style="border-top:1px solid #25303A;"><td style="padding:6px 10px;color:#A9B4C0;">Balance</td><td style="padding:6px 10px;">$${(acc.balance ?? 0).toFixed(2)}</td></tr>
+    <tr style="border-top:1px solid #25303A;"><td style="padding:6px 10px;color:#A9B4C0;">Equity</td><td style="padding:6px 10px;">$${(acc.equity ?? 0).toFixed(2)}</td></tr>
+    <tr style="border-top:1px solid #25303A;"><td style="padding:6px 10px;color:#A9B4C0;">Daily Drawdown</td><td style="padding:6px 10px;color:${parseFloat(ddPct) > 3 ? '#EF4444' : '#E6EDF3'};">${ddPct}% used</td></tr>
+    <tr style="border-top:1px solid #25303A;"><td style="padding:6px 10px;color:#A9B4C0;">Profit vs Target</td><td style="padding:6px 10px;color:${parseFloat(profitPct) >= 0 ? '#22C55E' : '#EF4444'};">${profitPct}%</td></tr>
+    <tr style="border-top:1px solid #25303A;"><td style="padding:6px 10px;color:#A9B4C0;">Trading Days</td><td style="padding:6px 10px;">${(acc.tradingDays || []).length} day(s)</td></tr>
+  </table>
+
+  <div style="margin-top:14px;font-size:11px;color:#6B7682;">Automated daily summary · Not financial advice</div>
+</div>`;
+
+    const text = [
+      `Daily Summary — ${dateNY}`,
+      `Trades: ${closed.length}  Wins: ${wins.length}  Losses: ${losses.length}  Win Rate: ${winRate}%`,
+      `Net Pips: ${fmtPips(netPips)}  Net PnL: ${fmtUsd(netPnl)}`,
+      '',
+      'BY STRATEGY',
+      ...Object.entries(byStrategy).map(([n, s]) => `  ${n}: ${s.wins}W/${s.losses}L  ${fmtPips(s.pips)} pips`),
+      '',
+      'PROP FIRM',
+      `  ${firm} — ${phase}${acc.failed ? ' ⚠ FAILED' : ''}`,
+      `  Balance: $${(acc.balance ?? 0).toFixed(2)}  Equity: $${(acc.equity ?? 0).toFixed(2)}`,
+      `  Daily DD: ${ddPct}%  Profit: ${profitPct}%  Trading Days: ${(acc.tradingDays || []).length}`
+    ].join('\n');
+
+    try {
+      const info = await this.transporter.sendMail({
+        from: this.from,
+        to: this.to.join(','),
+        subject,
+        text,
+        html
+      });
+      console.log('[mailer] daily summary sent:', info.messageId);
+    } catch (e) {
+      console.error('[mailer] daily summary failed:', e?.message || e);
+      throw e;
+    }
+  }
+
   async _flipAndVerify() {
     const alt = (this.cfg.port === 465)
       ? { port: 587, secure: false }

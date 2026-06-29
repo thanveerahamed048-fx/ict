@@ -16,7 +16,7 @@ import { ORB } from '../strategies/orb.js';
 import { GoldTimeStrategy } from '../strategies/goldTime.js';
 
 export class ModelBus {
-  constructor({ instrument, aggregator, log, notifier, monitor, propFirmManager, tradesCollection }) {
+  constructor({ instrument, aggregator, log, notifier, monitor, propFirmManager, tradesCollection, enabledStrategies }) {
     this.instrument = instrument;
     this.aggregator = aggregator;
     this.log = log || console.log;
@@ -25,60 +25,74 @@ export class ModelBus {
     this.propFirmManager = propFirmManager;
     this.tradesCollection = tradesCollection;
     this._asiaSavedForKey = null;
-    
+
+    // null = all enabled; Set = only named strategies fire
+    this.enabledStrategies = enabledStrategies || null;
+
+    // Crypto instruments skip FX session-based strategies
+    this.isCrypto = !!instrument.isCrypto;
+
+    // Do NOT call initEnteredStrategies() here — it is async and must be
+    // awaited by the caller (startBot) before ticks arrive. (#13 fix)
     this.enteredStrategiesToday = new Set();
-    this.initEnteredStrategies();
 
-    this.po3 = new PO3({ decimals: instrument.decimals, pipSize: instrument.pipSize, asset: 'fx' });
-    this.fvgc = new FVGContinuation({ decimals: instrument.decimals, pipSize: instrument.pipSize });
-    this.breaker = new BreakerReversal({ decimals: instrument.decimals, pipSize: instrument.pipSize });
-    this.judas = new JudasSwing({ decimals: instrument.decimals, pipSize: instrument.pipSize });
-    this.pdifvg = new PrevDayIFVG({ decimals: instrument.decimals, pipSize: instrument.pipSize, touchPips: 3 });
-    this.nyRangeOB = new NyRangeOB({ decimals: instrument.decimals, pipSize: instrument.pipSize });
-
-        this.candleRange = new CandleRangeEntry({
-          decimals: instrument.decimals,
-          pipSize: instrument.pipSize,
-          startHourNY: 8.5,   // 08:30 NY
-          endHourNY: 11,
-          useAsia: true,
-          usePrevDay: true,
-          useDO: true,
-          dispAtrMult: 1.2,
-          minBodyPips: 0,
-          expiryMin: 60,
-          levels: ['fvgMid', 'ob50', 'body50', 'range50', 'obOpen'],
-          touchPips: 1,
-          oneTradePerDay: false,   // allow many per day
-          multiPerSetup: true,     // allow multiple signals from one displacement
-          minCooldownMs: 500       // debounce
-        });
-        this.orb = new ORB({
-      decimals: instrument.decimals,
-      pipSize: instrument.pipSize,
-      startHourNY: 9.5,   // 9:30 NY
-      durationMin: 30,    // or 15 to match your Pine input
-      confirmByClose: true,    // require the last M1 to close beyond range
-      reverseLogic: false,
-      allowSecondChance: false, // true to allow a second entry (not tied to loss)
-      maxEntriesPerDay: 1,      // 1 or 2
-      touchPips: 0,             // allow exact touch
-      eodEndHourNY: 16.5        // ignore after 16:30 NY
-    });
-
-    // inside constructor after your other strategies:
-    this.goldTime = null;
-    if (this.instrument?.id === 'XAUUSD' || (this.instrument?.id || '').includes('XAU')) {
-      this.goldTime = new GoldTimeStrategy({
+    // FX-only strategies (require NY session context)
+    if (!this.isCrypto) {
+      this.po3 = new PO3({ decimals: instrument.decimals, pipSize: instrument.pipSize, asset: 'fx' });
+      this.fvgc = new FVGContinuation({ decimals: instrument.decimals, pipSize: instrument.pipSize });
+      this.breaker = new BreakerReversal({ decimals: instrument.decimals, pipSize: instrument.pipSize });
+      this.judas = new JudasSwing({ decimals: instrument.decimals, pipSize: instrument.pipSize });
+      this.pdifvg = new PrevDayIFVG({ decimals: instrument.decimals, pipSize: instrument.pipSize, touchPips: 3 });
+      this.nyRangeOB = new NyRangeOB({ decimals: instrument.decimals, pipSize: instrument.pipSize });
+      this.candleRange = new CandleRangeEntry({
         decimals: instrument.decimals,
         pipSize: instrument.pipSize,
-        length: 14,           // Pine default
-        checkHourNY: 4,       // 04:00 NY (adjust to your Pine input)
-        tradeDurationHours: 8,
-        oneTradePerDay: true
+        startHourNY: 8.5,
+        endHourNY: 11,
+        useAsia: true,
+        usePrevDay: true,
+        useDO: true,
+        dispAtrMult: 1.2,
+        minBodyPips: 0,
+        expiryMin: 60,
+        levels: ['fvgMid', 'ob50', 'body50', 'range50', 'obOpen'],
+        touchPips: 1,
+        oneTradePerDay: false,
+        multiPerSetup: true,
+        minCooldownMs: 500
       });
+
+      // Gold-specific
+      this.goldTime = null;
+      if (instrument.id === 'XAUUSD' || instrument.id.includes('XAU')) {
+        this.goldTime = new GoldTimeStrategy({
+          decimals: instrument.decimals,
+          pipSize: instrument.pipSize,
+          length: 14,
+          checkHourNY: 4,
+          tradeDurationHours: 8,
+          oneTradePerDay: true
+        });
+      }
     }
-        this.lastDayKey = null;
+
+    // ORB runs on all instruments.
+    // Crypto: uses midnight NY as open, 1h range, runs all day.
+    // FX: standard 9:30 NY open, 30min range, cuts off at 16:30.
+    this.orb = new ORB({
+      decimals: instrument.decimals,
+      pipSize: instrument.pipSize,
+      startHourNY: this.isCrypto ? 0 : 9.5,
+      durationMin:  this.isCrypto ? 60 : 30,
+      confirmByClose: true,
+      reverseLogic: false,
+      allowSecondChance: false,
+      maxEntriesPerDay: 1,
+      touchPips: 0,
+      eodEndHourNY: this.isCrypto ? 23.5 : 16.5
+    });
+
+    this.lastDayKey = null;
     this.lastPrice = null;
   }
 
@@ -104,7 +118,12 @@ export class ModelBus {
   // Per-instrument TP/SL pips
   _getRR() {
     const id = this.instrument?.id || '';
-    return RR_BY_SYMBOL[id] || DEFAULT_RR; // { tpPips, slPips }
+    return RR_BY_SYMBOL[id] || DEFAULT_RR;
+  }
+
+  // Returns true if this strategy name is allowed to fire
+  _isEnabled(name) {
+    return !this.enabledStrategies || this.enabledStrategies.has(name);
   }
 
   onM1Close(candle) {
@@ -114,13 +133,16 @@ export class ModelBus {
 
     const dKey = nyDayKey(msToNY(candle.ts));
     if (this.lastDayKey !== dKey) {
-      this.po3.resetDay?.();
-      this.judas.resetDay?.();
-      this.pdifvg.resetDay?.();
-      this.nyRangeOB.resetDay?.();
-      this.candleRange.resetDay?.();
+      if (!this.isCrypto) {
+        this.po3.resetDay?.();
+        this.judas.resetDay?.();
+        this.breaker.resetDay?.();
+        this.pdifvg.resetDay?.();
+        this.nyRangeOB.resetDay?.();
+        this.candleRange.resetDay?.();
+        this.goldTime?.resetDay?.();
+      }
       this.orb.resetDay?.();
-      this.goldTime?.resetDay?.();
       this.enteredStrategiesToday.clear();
       this.lastDayKey = dKey;
       this._log(`New NY day. Prev H/L: ${fmtPx(sessions.prevDayHigh, this.instrument.decimals)} / ${fmtPx(sessions.prevDayLow, this.instrument.decimals)}`);
@@ -132,16 +154,20 @@ export class ModelBus {
       this._log(`Asia snapshot saved for ${dKey}: [${sessions.asiaLo?.toFixed(this.instrument.decimals)} - ${sessions.asiaHi?.toFixed(this.instrument.decimals)}], DO=${sessions.dailyOpen != null ? sessions.dailyOpen.toFixed(this.instrument.decimals) : 'n/a'}`);
     }
 
-    // Evaluate setups (entries fire on tick)
-    this.po3.evaluate({ candles: M1, sessions });
-    this.fvgc.evaluate({ candles: M1, m5: M5, sessions });
-    this.breaker.evaluate({ candles: M1, sessions });
-    this.judas.evaluate({ candles: M1, sessions });
-    this.pdifvg.evaluate({ m5: M5, sessions });
-    this.nyRangeOB.onM1Close(candle);
-    this.candleRange.onM1Close(candle, sessions, M1);
-    this.orb.onM1Close(candle, sessions);
-    this.goldTime?.onM1Close(candle, sessions, M1);
+    // FX-only strategies — skip for crypto
+    if (!this.isCrypto) {
+      if (this._isEnabled('PO3'))         this.po3.evaluate({ candles: M1, sessions });
+      if (this._isEnabled('FVGC'))        this.fvgc.evaluate({ candles: M1, m5: M5, sessions });
+      if (this._isEnabled('BREAKER'))     this.breaker.evaluate({ candles: M1, sessions });
+      if (this._isEnabled('JUDAS'))       this.judas.evaluate({ candles: M1, sessions });
+      if (this._isEnabled('PDIFVG'))      this.pdifvg.evaluate({ m5: M5, sessions });
+      if (this._isEnabled('NYRangeOB'))   this.nyRangeOB.onM1Close(candle);
+      if (this._isEnabled('CandleRange')) this.candleRange.onM1Close(candle, sessions, M1);
+      if (this._isEnabled('GoldTime'))    this.goldTime?.onM1Close(candle, sessions, M1);
+    }
+
+    // ORB runs on all instruments
+    if (this._isEnabled('ORB')) this.orb.onM1Close(candle, sessions);
   }
 
   onTick(price, tsMs) {
@@ -231,48 +257,81 @@ export class ModelBus {
       }).catch((e) => console.error('[Dashboard] post error:', e?.message || e));
     };
 
-    // PO3
-    const p = this.po3.onPrice(price);
-    if (p) {
-      const { sl, tp } = this._buildFixedStops(p.entry, p.direction);
-      handleEntry('PO3', p.direction, p.entry, sl, tp, tsMs);
+    // FX-only on-tick entries
+    if (!this.isCrypto) {
+      // PO3
+      if (this._isEnabled('PO3')) {
+        const p = this.po3.onPrice(price);
+        if (p) {
+          const { sl, tp } = this._buildFixedStops(p.entry, p.direction);
+          handleEntry('PO3', p.direction, p.entry, sl, tp, tsMs);
+        }
+      }
+
+      // PrevDay IFVG
+      this.pdifvg.onTickTouch(price, sessions);
+      if (this._isEnabled('PDIFVG')) {
+        const pd = this.pdifvg.onPrice(price);
+        if (pd) {
+          const { sl, tp } = this._buildFixedStops(pd.entry, pd.direction);
+          handleEntry('PDIFVG', pd.direction, pd.entry, sl, tp, tsMs);
+        }
+      }
+
+      // NYRangeOB
+      if (this._isEnabled('NYRangeOB')) {
+        const nyob = this.nyRangeOB.onTick(price, tsMs);
+        if (nyob) {
+          const { sl, tp } = this._buildFixedStops(nyob.entry, nyob.direction);
+          handleEntry('NYRangeOB', nyob.direction, nyob.entry, sl, tp, tsMs);
+        }
+      }
+
+      // CandleRange
+      if (this._isEnabled('CandleRange')) {
+        const sigCR = this.candleRange.onTick(price, tsMs, sessions);
+        if (sigCR) {
+          const { sl, tp } = this._buildFixedStops(sigCR.entry, sigCR.direction);
+          handleEntry('CandleRange', sigCR.direction, sigCR.entry, sl, tp, tsMs);
+        }
+      }
+
+      // BREAKER — retest of breaker block zone
+      if (this._isEnabled('BREAKER')) {
+        const br = this.breaker.onPrice(price);
+        if (br) {
+          const { sl, tp } = this._buildFixedStops(br.entry, br.direction);
+          handleEntry('BREAKER', br.direction, br.entry, sl, tp, tsMs);
+        }
+      }
+
+      // JUDAS — London sweep fade
+      if (this._isEnabled('JUDAS')) {
+        const jd = this.judas.onPrice(price);
+        if (jd) {
+          const { sl, tp } = this._buildFixedStops(jd.entry, jd.direction);
+          handleEntry('JUDAS', jd.direction, jd.entry, sl, tp, tsMs);
+        }
+      }
+
+      // GoldTime (XAUUSD only)
+      if (this._isEnabled('GoldTime')) {
+        const gt = this.goldTime?.onTick(price, tsMs, sessions);
+        if (gt) {
+          const { sl, tp } = this._buildFixedStops(gt.entry, gt.direction);
+          handleEntry('GoldTime', gt.direction, gt.entry, sl, tp, tsMs);
+        }
+      }
     }
 
-    // PrevDay IFVG: register touch + check entry
-    this.pdifvg.onTickTouch(price, sessions);
-    const pd = this.pdifvg.onPrice(price);
-    if (pd) {
-      const { sl, tp } = this._buildFixedStops(pd.entry, pd.direction);
-      handleEntry('PDIFVG', pd.direction, pd.entry, sl, tp, tsMs);
+    // ORB entry — runs on all instruments (FX + crypto)
+    if (this._isEnabled('ORB')) {
+      const sigORB = this.orb.onTick(price, tsMs, sessions);
+      if (sigORB) {
+        const { sl, tp } = this._buildFixedStops(sigORB.entry, sigORB.direction);
+        handleEntry('ORB', sigORB.direction, sigORB.entry, sl, tp, tsMs);
+      }
     }
-
-    // NYRangeOB
-    const nyob = this.nyRangeOB.onTick(price, tsMs);
-    if (nyob) {
-      const { sl, tp } = this._buildFixedStops(nyob.entry, nyob.direction);
-      handleEntry('NYRangeOB', nyob.direction, nyob.entry, sl, tp, tsMs);
-    }
-
-    // CandleRange (ICT displacement candle retrace)
-    const sigCR = this.candleRange.onTick(price, tsMs, sessions);
-    if (sigCR) {
-      const { sl, tp } = this._buildFixedStops(sigCR.entry, sigCR.direction);
-      handleEntry('CandleRange', sigCR.direction, sigCR.entry, sl, tp, tsMs);
-    }
-
-        // ORB entry
-    const sigORB = this.orb.onTick(price, tsMs, sessions);
-    if (sigORB) {
-      const { sl, tp } = this._buildFixedStops(sigORB.entry, sigORB.direction);
-      handleEntry('ORB', sigORB.direction, sigORB.entry, sl, tp, tsMs);
-    }
-
-    const gt = this.goldTime?.onTick(price, tsMs, sessions);
-    if (gt) {
-      const { sl, tp } = this._buildFixedStops(gt.entry, gt.direction);
-      handleEntry('GoldTime', gt.direction, gt.entry, sl, tp, tsMs);
-    }
-        // Others: BREAKER, JUDAS if you want to re-enable on-tick entry later.
   }
 
   _buildFixedStops(entry, direction) {

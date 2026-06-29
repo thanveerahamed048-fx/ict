@@ -10,6 +10,7 @@ import { fileURLToPath } from 'url';
 import net from 'node:net';
 // Bot pieces
 import { FinnhubWS } from './src/feeds/finnhub.js';
+import { BinanceWS } from './src/feeds/binance.js';
 import { CandleAggregator } from './src/core/candleAggregator.js';
 import { ModelBus } from './src/core/modelBus.js';
 import { TradeMonitor } from './src/monitor/tradeMonitor.js';
@@ -17,7 +18,7 @@ import { Mailer } from './src/notify/mailer.js';
 import { nowNY, nyDayKey } from './src/utils/time.js';
 import { fmtPx } from './src/utils/format.js';
 import { loadAsiaSnapshot } from './src/utils/persist.js';
-import { INSTRUMENTS } from './src/config/instruments.js';
+import { INSTRUMENTS, CRYPTO_INSTRUMENTS } from './src/config/instruments.js';
 import { PropFirmManager } from './src/core/propFirmManager.js';
 
 // ====== ENV ======
@@ -28,27 +29,29 @@ const TRADES_COLL = process.env.TRADES_COLL || 'trades';
 
 const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY;
 
-// const MAIL_ENABLED = process.env.MAIL_ENABLED === '1';
-// const SMTP_HOST = process.env.SMTP_HOST || 'smtp.gmail.com';
-// const SMTP_PORT = Number(process.env.SMTP_PORT || 465);
-// const SMTP_SECURE = process.env.SMTP_SECURE ? process.env.SMTP_SECURE === '1' : (SMTP_PORT === 465);
-//const SMTP_USER = process.env.SMTP_USER || '';
+// ====== STRATEGY TOGGLE ======
+// Comma-separated list of strategy names to enable.
+// If not set, ALL strategies are enabled.
+// Example: ENABLED_STRATEGIES=PO3,ORB,CandleRange
+const ENABLED_STRATEGIES = process.env.ENABLED_STRATEGIES
+  ? new Set(process.env.ENABLED_STRATEGIES.split(',').map(s => s.trim()).filter(Boolean))
+  : null; // null = all enabled
+if (ENABLED_STRATEGIES) {
+  console.log(`[config] ENABLED_STRATEGIES: ${[...ENABLED_STRATEGIES].join(', ')}`);
+}
+
+// ====== EMAIL CONFIG — all values from .env ======
 const SMTP_PASS = process.env.SMTP_PASS || '';
-//const MAIL_FROM = process.env.MAIL_FROM || SMTP_USER || '';
-//const MAIL_TO = ['thanveerahamed048@gmail.com'];
-// const MAIL_THROTTLE_MS = Number(process.env.MAIL_THROTTLE_MS || 60000);
+const MAIL_ENABLED = process.env.MAIL_ENABLED === '1';
+const SMTP_HOST    = process.env.SMTP_HOST || 'smtp.gmail.com';
+const SMTP_PORT    = Number(process.env.SMTP_PORT || 465);
+const SMTP_SECURE  = process.env.SMTP_SECURE ? process.env.SMTP_SECURE === '1' : SMTP_PORT === 465;
+const SMTP_USER    = process.env.SMTP_USER || '';
+const MAIL_FROM    = process.env.MAIL_FROM || `Forex Signals <${SMTP_USER}>`;
+const MAIL_TO      = process.env.MAIL_TO   || '';
+const MAIL_THROTTLE_MS = Number(process.env.MAIL_THROTTLE_MS || 60_000);
 
-// Email settings (use an App Password if Gmail/Outlook)
-const MAIL_ENABLED = 1; // set false to disable emails
-const SMTP_HOST = 'smtp.gmail.com';
-const SMTP_PORT = 465;         // 465 = SSL, 587 = STARTTLS
-const SMTP_SECURE = 1;      // true for 465, false for 587
-const SMTP_USER = '123ninjaboy456@gmail.com';
-const MAIL_FROM = 'Forex Signals <123ninjaboy456@gmail.com>';
-const MAIL_TO = 'thanveerahamed048@gmail.com' // list of recipients
-const MAIL_THROTTLE_MS = 60_000;    // min interval per instrument+signal
-
-console.log(`[config] SMTP_USER=${SMTP_USER} PASS=${SMTP_PASS ? 'SET' : 'UNSET'} PORT=${SMTP_PORT} SECURE=${SMTP_SECURE}`);
+console.log(`[config] SMTP_USER=${SMTP_USER} PASS=${SMTP_PASS ? 'SET' : 'UNSET'} PORT=${SMTP_PORT} SECURE=${SMTP_SECURE} MAIL_ENABLED=${MAIL_ENABLED}`);
 
 // Live feed tracker
 const live = {
@@ -101,6 +104,22 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 app.use(express.static(path.join(__dirname, 'web')));
 
+
+app.get('/api/ticks', (_req, res) => {
+  const now = Date.now();
+  const items = INSTRUMENTS.map(inst => {
+    const t = live.ticks.get(inst.id);
+    return {
+      instrumentId: inst.id,
+      price: t ? Number(t.price.toFixed(inst.decimals)) : null,
+      decimals: inst.decimals,
+      tsMs: t ? t.tsMs : null,
+      ageSec: t ? Math.round((now - t.tsMs) / 1000) : null,
+      isCrypto: inst.isCrypto || false
+    };
+  });
+  res.json({ items, wsConnected: live.ws.connected });
+});
 
 app.get('/health', async (_req, res) => {
   try {
@@ -241,7 +260,7 @@ app.post('/_internal/result', async (req, res) => {
     if (!doc) return res.status(404).json({ error: 'Trade not found' });
 
     const resultPips = b.pips != null ? Number(b.pips) : null;
-    const exitReason = b.outcome === 'profit' ? 'tp' : b.outcome === 'loss' ? 'sl' : 'manual';
+    const exitReason = b.outcome === 'profit' ? 'tp' : b.outcome === 'be' ? 'be' : b.outcome === 'loss' ? 'sl' : 'manual';
     const timeToCloseMin = Math.max(0, Math.round((exitTsMs - (doc.entryTs || exitTsMs)) / 60000));
 
     const tradeLots = doc.lots != null ? Number(doc.lots) : 2.0;
@@ -265,7 +284,72 @@ app.post('/_internal/result', async (req, res) => {
           pnl,
           timeToCloseMin,
           updatedAt: Date.now(),
-          variantLabel: b.variant || doc.variantLabel || null
+          variantLabel: b.variant || doc.variantLabel || null,
+          // Preserve final SL event log if provided
+          ...(Array.isArray(b.slEvents) && b.slEvents.length > 0 ? { slEvents: b.slEvents } : {}),
+          // Preserve partial close history if provided
+          ...(Array.isArray(b.partialEvents) && b.partialEvents.length > 0 ? { partialEvents: b.partialEvents } : {})
+        }
+      }
+    );
+
+    res.json({ ok: true, tradeId });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Partial close (scale-out at 1R)
+app.post('/_internal/partial_close', async (req, res) => {
+  try {
+    const b = req.body || {};
+    if (!b.instrumentId || !b.strategy || !b.entryTs || b.exitPrice == null) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+    const tradeId = `${b.instrumentId}-${b.strategy}-${b.entryTs}`;
+
+    await trades.updateOne(
+      { _id: tradeId },
+      {
+        $set: {
+          // Reflect reduced lot size on the document
+          ...(b.remainingLots != null ? { lots: Number(b.remainingLots) } : {}),
+          slEvents:      Array.isArray(b.slEvents) ? b.slEvents : [],
+          updatedAt:     Date.now()
+        },
+        $push: {
+          partialEvents: {
+            exitPrice:   Number(b.exitPrice),
+            exitTs:      Number(b.exitTs),
+            pips:        b.partialPips != null ? Number(b.partialPips) : null,
+            lots:        b.partialLots != null ? Number(b.partialLots) : null
+          }
+        }
+      }
+    );
+
+    res.json({ ok: true, tradeId });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// SL move update (e.g. break-even)
+app.post('/_internal/sl_update', async (req, res) => {
+  try {
+    const b = req.body || {};
+    if (!b.instrumentId || !b.strategy || !b.entryTs || b.newSl == null) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+    const tradeId = `${b.instrumentId}-${b.strategy}-${b.entryTs}`;
+
+    await trades.updateOne(
+      { _id: tradeId },
+      {
+        $set: {
+          slPrice: Number(b.newSl),
+          slEvents: Array.isArray(b.slEvents) ? b.slEvents : [],
+          updatedAt: Date.now()
         }
       }
     );
@@ -454,6 +538,19 @@ app.post('/debug/send-email', async (_req, res) => {
   }
 });
 
+app.post('/debug/send-daily-summary', async (_req, res) => {
+  try {
+    const todayNY = DateTime.now().setZone('America/New_York');
+    const dateStr = todayNY.toFormat('yyyy-LL-dd');
+    const todayTrades = await trades.find({ entryDateNY: dateStr }).toArray();
+    const account = propFirmManager.getAccount();
+    await mailer.sendDailySummary({ dateNY: dateStr, trades: todayTrades, account });
+    res.json({ ok: true, dateNY: dateStr, tradeCount: todayTrades.length });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e?.message || String(e) });
+  }
+});
+
 app.get('/debug/smtp-check', async (req, res) => {
   const host = process.env.SMTP_HOST || 'smtp.gmail.com';
   const port = Number(process.env.SMTP_PORT || 465);
@@ -539,8 +636,11 @@ async function startBot() {
       monitor,
       propFirmManager,
       tradesCollection: trades,
+      enabledStrategies: ENABLED_STRATEGIES,
       log: (line) => console.log(`[${nowNY().toFormat('yyyy-LL-dd HH:mm:ss')} NY] ${line}`)
     });
+    // Await the DB query that re-populates enteredStrategiesToday before ticks arrive
+    await bus.initEnteredStrategies();
     busById.set(inst.id, bus);
 
     const todayKey = nyDayKey(nowNY());
@@ -558,18 +658,17 @@ async function startBot() {
 
   new FinnhubWS({
     apiKey: FINNHUB_API_KEY,
-    symbols: INSTRUMENTS.map(i => i.feedSymbol),
+    symbols: INSTRUMENTS.filter(i => i.feed === 'finnhub').map(i => i.feedSymbol),
     onOpen: () => { live.ws.connected = true; live.ws.lastOpenAt = Date.now(); },
     onClose: () => { live.ws.connected = false; },
     onTick: (feedSymbol, price, tsMs) => {
       const inst = INSTRUMENTS.find(i => i.feedSymbol === feedSymbol);
       if (!inst) return;
-      updateTick(inst.id, price, tsMs);                // <-- live tick
+      updateTick(inst.id, price, tsMs);
       aggById.get(inst.id)?.ingestTick(price, tsMs);
       busById.get(inst.id)?.onTick(price, tsMs);
       monitor.onTick(inst.id, price, tsMs);
 
-      // Trigger prop firm calculations on each tick
       const priceMap = new Map();
       for (const [id, tick] of live.ticks.entries()) {
         priceMap.set(id, tick.price);
@@ -579,6 +678,30 @@ async function startBot() {
       });
     }
   });
+
+  // ── Binance feed (crypto) ────────────────────────────────────────────────
+  if (CRYPTO_INSTRUMENTS.length > 0) {
+    new BinanceWS({
+      symbols: CRYPTO_INSTRUMENTS.map(i => i.feedSymbol),
+      onTick: (feedSymbol, price, tsMs) => {
+        const inst = CRYPTO_INSTRUMENTS.find(i => i.feedSymbol === feedSymbol);
+        if (!inst) return;
+        updateTick(inst.id, price, tsMs);
+        aggById.get(inst.id)?.ingestTick(price, tsMs);
+        busById.get(inst.id)?.onTick(price, tsMs);
+        monitor.onTick(inst.id, price, tsMs);
+
+        const priceMap = new Map();
+        for (const [id, tick] of live.ticks.entries()) {
+          priceMap.set(id, tick.price);
+        }
+        propFirmManager.onTick(priceMap, monitor.trades).catch(err => {
+          console.error('[PropFirmManager] Binance tick error:', err);
+        });
+      }
+    });
+    console.log(`[bot] Binance feed started for: ${CRYPTO_INSTRUMENTS.map(i => i.id).join(', ')}`);
+  }
 
   setInterval(() => {
     const now = Date.now();
@@ -602,10 +725,48 @@ async function startBot() {
   }, 60_000);
 }
 
+// ── Daily summary scheduler (fires at 17:00 NY = end of trading day) ────
+function startDailySummaryScheduler() {
+  const NY_ZONE = 'America/New_York';
+
+  function msUntilNext5pmNY() {
+    const now  = DateTime.now().setZone(NY_ZONE);
+    let target = now.set({ hour: 17, minute: 0, second: 0, millisecond: 0 });
+    // If it's already past 17:00 today, schedule for tomorrow
+    if (now >= target) target = target.plus({ days: 1 });
+    return target.toMillis() - now.toMillis();
+  }
+
+  async function sendSummary() {
+    try {
+      const todayNY = DateTime.now().setZone(NY_ZONE);
+      // Use yesterday's date if we somehow fire just after midnight
+      const dateStr = todayNY.toFormat('yyyy-LL-dd');
+
+      const todayTrades = await trades.find({ entryDateNY: dateStr }).toArray();
+      const account = propFirmManager.getAccount();
+
+      await mailer.sendDailySummary({ dateNY: dateStr, trades: todayTrades, account });
+      console.log(`[scheduler] Daily summary sent for ${dateStr}`);
+    } catch (e) {
+      console.error('[scheduler] Daily summary error:', e?.message || e);
+    }
+
+    // Schedule the next one (tomorrow at 17:00 NY)
+    setTimeout(sendSummary, msUntilNext5pmNY());
+  }
+
+  const delay = msUntilNext5pmNY();
+  const hrsUntil = (delay / 3_600_000).toFixed(1);
+  console.log(`[scheduler] Daily summary scheduled in ${hrsUntil}h (at 17:00 NY)`);
+  setTimeout(sendSummary, delay);
+}
+
 // Start server then bot
 app.listen(HTTP_PORT, async () => {
   console.log(`Dashboard + Web running on http://0.0.0.0:${HTTP_PORT}`);
   await startBot();
+  startDailySummaryScheduler();
 });
 
 // Graceful shutdown

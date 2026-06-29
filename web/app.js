@@ -315,7 +315,12 @@ function renderTrades() {
       <td>${fmt(t.entryPrice, t.decimals)}</td>
       <td>${t.slPrice != null ? fmt(t.slPrice, t.decimals) : '—'}</td>
       <td>${t.tpPrice != null ? fmt(t.tpPrice, t.decimals) : '—'}</td>
-      <td><span class="badge ${t.status}">${t.status}</span></td>
+      <td>
+        <span class="badge ${t.status}">${t.status}</span>
+        ${t.exitReason === 'be' ? '<span class="badge" style="background:#92400E;color:#FDE68A;margin-left:4px;">BE</span>' : ''}
+        ${Array.isArray(t.slEvents) && t.slEvents.length > 0 && t.status === 'open' ? '<span class="badge" style="background:#065F46;color:#6EE7B7;margin-left:4px;">🔒BE</span>' : ''}
+        ${Array.isArray(t.partialEvents) && t.partialEvents.length > 0 ? '<span class="badge" style="background:#1E3A5F;color:#93C5FD;margin-left:4px;">½</span>' : ''}
+      </td>
       <td>${t.exitPrice != null ? fmt(t.exitPrice, t.decimals) : '—'}</td>
       <td class="${result != null ? (result>=0?'pips-pos':'pips-neg') : ''}">${result != null ? fmt(result, 1) : '—'}</td>
       <td class="${pnl != null ? (pnl>=0?'pips-pos':'pips-neg') : ''}">${pnl != null ? '$' + fmt(pnl, 2) : '—'}</td>
@@ -332,6 +337,52 @@ function openDrawer(t) {
   const ctx = t.context || {};
   const result = t.resultPips ?? null;
   const pnl = t.pnl ?? (result != null ? result * (t.lots || 2.0) * 10 : null);
+
+  // SL events / break-even history
+  const slEvents = Array.isArray(t.slEvents) && t.slEvents.length > 0 ? t.slEvents : null;
+
+  // Partial close history
+  const partialEvents = Array.isArray(t.partialEvents) && t.partialEvents.length > 0 ? t.partialEvents : null;
+  const partialEventsHtml = partialEvents
+    ? `<div style="margin-top:12px;">
+        <div class="card-title">Partial Closes (Scale-Out)</div>
+        ${partialEvents.map((ev, i) => {
+          const ts = ev.exitTs ? new Date(ev.exitTs).toISOString().replace('T',' ').slice(0,19) + ' UTC' : '—';
+          return `<div style="display:flex;gap:12px;padding:4px 0;border-bottom:1px solid #1E2A35;font-size:12px;">
+            <span style="color:#A9B4C0;min-width:60px;">Close ${i + 1}</span>
+            <span>@ <strong>${fmt(ev.exitPrice, t.decimals)}</strong></span>
+            <span class="${(ev.pips ?? 0) >= 0 ? 'pips-pos' : 'pips-neg'}">${ev.pips != null ? (ev.pips >= 0 ? '+' : '') + fmt(ev.pips, 1) + ' pips' : '—'}</span>
+            <span style="color:#A9B4C0;">${ev.lots != null ? ev.lots + ' lots' : '—'}</span>
+            <span style="color:#6B7682;margin-left:auto;">${ts}</span>
+          </div>`;
+        }).join('')}
+      </div>`
+    : '';
+  const slEventsHtml = slEvents
+    ? `<div style="margin-top:12px;">
+        <div class="card-title">SL Move History</div>
+        ${slEvents.map(ev => {
+          const label = ev.type === 'break_even' ? '🔒 Break-Even' : ev.type;
+          const ts = ev.atTs ? new Date(ev.atTs).toISOString().replace('T', ' ').slice(0, 19) + ' UTC' : '—';
+          return `<div style="display:flex;gap:12px;padding:4px 0;border-bottom:1px solid #1E2A35;font-size:12px;">
+            <span style="color:#A9B4C0;min-width:110px;">${label}</span>
+            <span>SL: <span style="text-decoration:line-through;color:#6B7682;">${fmt(ev.fromSl, t.decimals)}</span> → <span style="color:#10B981;">${fmt(ev.toSl, t.decimals)}</span></span>
+            <span style="color:#6B7682;">@ ${fmt(ev.atPrice, t.decimals)}</span>
+            <span style="color:#6B7682;margin-left:auto;">${ts}</span>
+          </div>`;
+        }).join('')}
+      </div>`
+    : '';
+
+  // Exit reason badge
+  const exitReasonLabel = t.exitReason === 'be'
+    ? '<span style="color:#F59E0B;font-weight:600;">BE (Break-Even)</span>'
+    : t.exitReason === 'tp'
+    ? '<span class="pips-pos">TP Hit</span>'
+    : t.exitReason === 'sl'
+    ? '<span class="pips-neg">SL Hit</span>'
+    : t.exitReason || '—';
+
   drawerBody.innerHTML = `
     <div class="card" style="background:transparent;border:none;padding:0;">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
@@ -342,16 +393,20 @@ function openDrawer(t) {
           <div>Lots: ${t.lots != null ? t.lots : '—'}</div>
           <div>SL: ${t.slPrice != null ? fmt(t.slPrice, t.decimals) : '—'} (${t.slPips != null ? t.slPips + ' pips' : '—'})</div>
           <div>TP: ${t.tpPrice != null ? fmt(t.tpPrice, t.decimals) : '—'} (${t.tpPips != null ? t.tpPips + ' pips' : '—'})</div>
+          ${slEvents ? `<div style="margin-top:4px;color:#F59E0B;font-size:12px;">🔒 BE triggered</div>` : ''}
         </div>
         <div>
           <div class="card-title">Exit</div>
           <div>Time: ${t.exitTsNY || '—'}</div>
           <div>Price: ${t.exitPrice != null ? fmt(t.exitPrice, t.decimals) : '—'}</div>
+          <div>Reason: ${exitReasonLabel}</div>
           <div>Result: ${result != null ? (result>=0?'<span class="pips-pos">+'+fmt(result,1)+'</span>':'<span class="pips-neg">'+fmt(result,1)+'</span>') : '—'}</div>
           <div>PnL: ${pnl != null ? (pnl>=0?'<span class="pips-pos">+$'+fmt(pnl,2)+'</span>':'<span class="pips-neg">-$'+fmt(Math.abs(pnl),2)+'</span>') : '—'}</div>
           <div>Duration: ${t.timeToCloseMin != null ? t.timeToCloseMin + 'm' : '—'}</div>
         </div>
       </div>
+      ${partialEventsHtml}
+      ${slEventsHtml}
       <div style="margin-top:12px;">
         <div class="card-title">Context</div>
         <div>Daily Open: ${ctx.dailyOpen != null ? fmt(ctx.dailyOpen, t.decimals) : '—'}</div>
@@ -509,6 +564,89 @@ payoutBtn.addEventListener('click', async () => {
   }
 });
 
+// ── Live ticker strip ────────────────────────────────────────────────────
+const tickerItems = document.getElementById('tickerItems');
+const wsStatusDot = document.getElementById('wsStatus');
+const prevPrices = new Map(); // instrumentId -> last known price (for flash direction)
+
+async function loadTicker() {
+  try {
+    const data = await fetchJSON('/api/ticks');
+
+    // WS status dot
+    if (data.wsConnected) {
+      wsStatusDot.className = 'ws-dot connected';
+      wsStatusDot.title = 'Feed connected';
+    } else {
+      wsStatusDot.className = 'ws-dot disconnected';
+      wsStatusDot.title = 'Feed disconnected';
+    }
+
+    const items = data.items || [];
+    if (!items.length) return;
+
+    // On first call: build ALL chips at once (even those with null price)
+    // so the strip always shows every instrument from the start
+    if (tickerItems.querySelector('.ticker-placeholder')) {
+      tickerItems.innerHTML = '';
+      for (const tick of items) {
+        const el = document.createElement('div');
+        el.className = 'ticker-item';
+        el.id = `tick-${tick.instrumentId}`;
+        // Add a subtle divider between FX/Metal and Crypto
+        if (tick.isCrypto && !tickerItems.querySelector('.ticker-divider')) {
+          const div = document.createElement('span');
+          div.className = 'ticker-divider';
+          div.textContent = '|';
+          div.style.cssText = 'color:var(--line);padding:0 4px;align-self:stretch;display:flex;align-items:center;';
+          tickerItems.appendChild(div);
+        }
+        el.innerHTML = `
+          <span class="ticker-sym">${tick.instrumentId}</span>
+          <span class="ticker-price" id="tick-price-${tick.instrumentId}">—</span>
+          <span class="ticker-age"  id="tick-age-${tick.instrumentId}">…</span>
+        `;
+        tickerItems.appendChild(el);
+      }
+    }
+
+    // Update prices and ages for every instrument
+    for (const tick of items) {
+      const id = tick.instrumentId;
+      const priceEl = document.getElementById(`tick-price-${id}`);
+      const ageEl   = document.getElementById(`tick-age-${id}`);
+      if (!priceEl || !ageEl) continue;
+
+      if (tick.price != null) {
+        const prev = prevPrices.get(id);
+        const priceStr = tick.price.toFixed(tick.decimals);
+
+        // Flash direction colour
+        priceEl.classList.remove('up', 'down');
+        if (prev != null && tick.price !== prev) {
+          priceEl.classList.add(tick.price > prev ? 'up' : 'down');
+          setTimeout(() => priceEl.classList.remove('up', 'down'), 1200);
+        }
+        priceEl.textContent = priceStr;
+        prevPrices.set(id, tick.price);
+      } else {
+        priceEl.textContent = '—';
+      }
+
+      // Age — red if > 30 s, or no data yet
+      if (tick.ageSec != null) {
+        ageEl.textContent = tick.ageSec < 60 ? `${tick.ageSec}s` : `${Math.floor(tick.ageSec / 60)}m`;
+        ageEl.className   = tick.ageSec > 30 ? 'ticker-age stale' : 'ticker-age';
+      } else {
+        ageEl.textContent = 'waiting';
+        ageEl.className   = 'ticker-age stale';
+      }
+    }
+  } catch (e) {
+    // silently fail — strip will just not update
+  }
+}
+
 (function init() {
   const end = new Date();
   const start = new Date(end.getTime() - 29*24*3600*1000);
@@ -524,10 +662,14 @@ payoutBtn.addEventListener('click', async () => {
     alert('Failed to load data. Check that your dashboard API is running and CORS enabled.');
   });
 
+  // Ticker updates more frequently than the rest of the dashboard
+  loadTicker().catch(() => {});
+  setInterval(() => loadTicker().catch(() => {}), 2000);
+
   setInterval(() => {
     loadSummary().catch(()=>{});
     loadDaily().catch(()=>{});
     loadTrades().catch(()=>{});
     loadPropFirmStatus().catch(()=>{});
-  }, 5000); // Poll status more frequently (5s) for live updates
+  }, 5000);
 })();
